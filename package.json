@@ -1,0 +1,13 @@
+{
+  "name": "fermat-multiplayer",
+  "version": "1.0.0",
+  "description": "Servidor multijugador para La Habitación de Fermat",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}
