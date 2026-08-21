@@ -1,1 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prueba multijugador</title>
 
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    button {
+      padding: 12px 20px;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    input {
+      padding: 12px;
+      width: 150px;
+    }
+
+    #status {
+      margin: 20px 0;
+      font-weight: bold;
+    }
+
+    #roomCode {
+      font-size: 28px;
+      font-weight: bold;
+      letter-spacing: 5px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Prueba multijugador</h1>
+
+  <div id="status">
+    Conectando...
+  </div>
+
+  <button id="createButton">
+    Crear sala
+  </button>
+
+  <hr>
+
+  <input
+    id="roomInput"
+    type="text"
+    maxlength="4"
+    placeholder="Código"
+  >
+
+  <button id="joinButton">
+    Unirse
+  </button>
+
+  <p>
+    Código de sala:
+    <span id="roomCode">---</span>
+  </p>
+
+  <p>
+    Jugadores conectados:
+    <strong id="playerCount">0</strong>
+  </p>
+
+  <script>
+
+    const socket = io(
+      "https://fermat-multiplayer.onrender.com"
+    );
+
+    const statusEl =
+      document.getElementById("status");
+
+    const createButton =
+      document.getElementById("createButton");
+
+    const joinButton =
+      document.getElementById("joinButton");
+
+    const roomInput =
+      document.getElementById("roomInput");
+
+    const roomCodeEl =
+      document.getElementById("roomCode");
+
+    const playerCountEl =
+      document.getElementById("playerCount");
+
+
+    socket.on("connect", () => {
+
+      statusEl.textContent =
+        "Conectado al servidor";
+
+    });
+
+
+    socket.on("connect_error", () => {
+
+      statusEl.textContent =
+        "Error de conexión";
+
+    });
+
+
+    createButton.addEventListener(
+      "click",
+      () => {
+
+        socket.emit("createRoom");
+
+      }
+    );
+
+
+    joinButton.addEventListener(
+      "click",
+      () => {
+
+        const code =
+          roomInput.value
+            .trim()
+            .toUpperCase();
+
+        if (!code) {
+          return;
+        }
+
+        socket.emit(
+          "joinRoom",
+          code
+        );
+
+      }
+    );
+
+
+    socket.on(
+      "roomCreated",
+      (data) => {
+
+        roomCodeEl.textContent =
+          data.roomCode;
+
+        playerCountEl.textContent =
+          data.players;
+
+        statusEl.textContent =
+          "Sala creada";
+
+      }
+    );
+
+
+    socket.on(
+      "playersUpdated",
+      (data) => {
+
+        playerCountEl.textContent =
+          data.players;
+
+      }
+    );
+
+
+    socket.on(
+      "roomError",
+      (message) => {
+
+        statusEl.textContent =
+          message;
+
+      }
+    );
+
+  </script>
+
+</body>
+</html>
