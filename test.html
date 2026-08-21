@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>Prueba multijugador</title>
 
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
@@ -35,6 +36,12 @@
       font-size: 28px;
       font-weight: bold;
       letter-spacing: 5px;
+    }
+
+    #gamePanel {
+      margin-top: 30px;
+      padding: 20px;
+      border: 1px solid #999;
     }
   </style>
 </head>
@@ -74,11 +81,47 @@
     <strong id="playerCount">0</strong>
   </p>
 
+  <div id="gamePanel">
+
+    <h2>Estado de la partida</h2>
+
+    <p>
+      Estado:
+      <strong id="gameStatus">Esperando</strong>
+    </p>
+
+    <p>
+      Acertijo:
+      <strong id="currentPuzzle">0</strong>
+    </p>
+
+    <p>
+      Progreso:
+      <strong id="puzzleProgress">0/5</strong>
+    </p>
+
+    <p>
+      Tiempo:
+      <strong id="timeRemaining">10:00</strong>
+    </p>
+
+    <button id="startButton">
+      Iniciar partida
+    </button>
+
+    <button id="solveButton">
+      Simular acertijo resuelto
+    </button>
+
+  </div>
+
+
   <script>
 
     const socket = io(
       "https://fermat-multiplayer.onrender.com"
     );
+
 
     const statusEl =
       document.getElementById("status");
@@ -97,6 +140,27 @@
 
     const playerCountEl =
       document.getElementById("playerCount");
+
+    const gameStatusEl =
+      document.getElementById("gameStatus");
+
+    const currentPuzzleEl =
+      document.getElementById("currentPuzzle");
+
+    const puzzleProgressEl =
+      document.getElementById("puzzleProgress");
+
+    const timeRemainingEl =
+      document.getElementById("timeRemaining");
+
+    const startButton =
+      document.getElementById("startButton");
+
+    const solveButton =
+      document.getElementById("solveButton");
+
+
+    let isRoomCreator = false;
 
 
     socket.on("connect", () => {
@@ -147,6 +211,26 @@
     );
 
 
+    startButton.addEventListener(
+      "click",
+      () => {
+
+        socket.emit("startGame");
+
+      }
+    );
+
+
+    solveButton.addEventListener(
+      "click",
+      () => {
+
+        socket.emit("puzzleSolved");
+
+      }
+    );
+
+
     socket.on(
       "roomCreated",
       (data) => {
@@ -154,8 +238,7 @@
         roomCodeEl.textContent =
           data.roomCode;
 
-        playerCountEl.textContent =
-          data.players;
+        isRoomCreator = true;
 
         statusEl.textContent =
           "Sala creada";
@@ -170,6 +253,60 @@
 
         playerCountEl.textContent =
           data.players;
+
+      }
+    );
+
+
+    socket.on(
+      "roomState",
+      (state) => {
+
+        gameStatusEl.textContent =
+          state.status;
+
+        currentPuzzleEl.textContent =
+          state.currentPuzzle;
+
+        puzzleProgressEl.textContent =
+          `${state.puzzlesSolved}/${state.totalPuzzles}`;
+
+        const minutes =
+          Math.floor(
+            state.timeRemaining / 60
+          );
+
+        const seconds =
+          state.timeRemaining % 60;
+
+        timeRemainingEl.textContent =
+          `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+
+        playerCountEl.textContent =
+          state.players;
+
+
+        if (
+          state.status === "playing"
+        ) {
+
+          startButton.disabled =
+            true;
+
+        }
+
+
+        if (
+          state.status === "victory"
+        ) {
+
+          solveButton.disabled =
+            true;
+
+          startButton.disabled =
+            true;
+
+        }
 
       }
     );
