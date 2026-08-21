@@ -410,14 +410,7 @@ io.on("connection", (socket) => {
 
       // No aceptar otro acierto mientras
       // está activa la bonificación.
-      if (
-        room.bonusActive
-      ) {
-
-        return;
-      }
-
-
+      
       room.puzzlesSolved += 1;
 
 
