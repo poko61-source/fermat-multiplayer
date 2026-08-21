@@ -17,6 +17,11 @@ const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
 
+
+// --------------------------------------------------
+// PÁGINAS
+// --------------------------------------------------
+
 app.get("/", (req, res) => {
   res.send(
     "Servidor multijugador de La Habitación de Fermat funcionando."
@@ -30,8 +35,11 @@ app.get("/test", (req, res) => {
 });
 
 
-function createGameState() {
+// --------------------------------------------------
+// CREAR ESTADO DE UNA PARTIDA
+// --------------------------------------------------
 
+function createGameState() {
   return {
     status: "waiting",
     currentPuzzle: 0,
@@ -40,12 +48,14 @@ function createGameState() {
     timeRemaining: GAME_DURATION,
     players: []
   };
-
 }
 
 
-function getRoomState(room) {
+// --------------------------------------------------
+// ESTADO QUE SE ENVÍA A LOS JUGADORES
+// --------------------------------------------------
 
+function getRoomState(room) {
   return {
     status: room.status,
     currentPuzzle: room.currentPuzzle,
@@ -54,12 +64,14 @@ function getRoomState(room) {
     timeRemaining: room.timeRemaining,
     players: room.players.length
   };
-
 }
 
 
-function broadcastRoomState(roomCode) {
+// --------------------------------------------------
+// ENVIAR ESTADO A TODA LA SALA
+// --------------------------------------------------
 
+function broadcastRoomState(roomCode) {
   const room = rooms.get(roomCode);
 
   if (!room) {
@@ -70,9 +82,12 @@ function broadcastRoomState(roomCode) {
     "roomState",
     getRoomState(room)
   );
-
 }
 
+
+// --------------------------------------------------
+// CONEXIONES
+// --------------------------------------------------
 
 io.on("connection", (socket) => {
 
@@ -81,6 +96,10 @@ io.on("connection", (socket) => {
     socket.id
   );
 
+
+  // ------------------------------------------------
+  // CREAR SALA
+  // ------------------------------------------------
 
   socket.on("createRoom", () => {
 
@@ -96,11 +115,7 @@ io.on("connection", (socket) => {
     } while (rooms.has(roomCode));
 
 
-    const room = {
-      ...createGameState(),
-      players: []
-    };
-
+    const room = createGameState();
 
     rooms.set(
       roomCode,
@@ -110,9 +125,12 @@ io.on("connection", (socket) => {
 
     socket.join(roomCode);
 
-    room.players.push(socket.id);
+    room.players.push(
+      socket.id
+    );
 
-    socket.roomCode = roomCode;
+    socket.roomCode =
+      roomCode;
 
 
     socket.emit(
@@ -123,7 +141,9 @@ io.on("connection", (socket) => {
     );
 
 
-    broadcastRoomState(roomCode);
+    broadcastRoomState(
+      roomCode
+    );
 
 
     console.log(
@@ -133,6 +153,10 @@ io.on("connection", (socket) => {
 
   });
 
+
+  // ------------------------------------------------
+  // UNIRSE A SALA
+  // ------------------------------------------------
 
   socket.on(
     "joinRoom",
@@ -193,7 +217,8 @@ io.on("connection", (socket) => {
         socket.id
       );
 
-      socket.roomCode = code;
+      socket.roomCode =
+        code;
 
 
       io.to(code).emit(
@@ -205,7 +230,9 @@ io.on("connection", (socket) => {
       );
 
 
-      broadcastRoomState(code);
+      broadcastRoomState(
+        code
+      );
 
 
       console.log(
@@ -219,12 +246,17 @@ io.on("connection", (socket) => {
   );
 
 
+  // ------------------------------------------------
+  // INICIAR PARTIDA
+  // ------------------------------------------------
+
   socket.on(
     "startGame",
     () => {
 
       const roomCode =
         socket.roomCode;
+
 
       if (!roomCode) {
         return;
@@ -234,11 +266,13 @@ io.on("connection", (socket) => {
       const room =
         rooms.get(roomCode);
 
+
       if (!room) {
         return;
       }
 
 
+      // Solo el creador puede iniciar.
       if (
         room.players[0] !==
         socket.id
@@ -270,11 +304,14 @@ io.on("connection", (socket) => {
       }
 
 
-      room.status = "playing";
+      room.status =
+        "playing";
 
-      room.currentPuzzle = 1;
+      room.currentPuzzle =
+        1;
 
-      room.puzzlesSolved = 0;
+      room.puzzlesSolved =
+        0;
 
       room.timeRemaining =
         GAME_DURATION;
@@ -294,6 +331,10 @@ io.on("connection", (socket) => {
   );
 
 
+  // ------------------------------------------------
+  // ACERTIJO RESUELTO
+  // ------------------------------------------------
+
   socket.on(
     "puzzleSolved",
     () => {
@@ -301,8 +342,10 @@ io.on("connection", (socket) => {
       const roomCode =
         socket.roomCode;
 
+
       const room =
         rooms.get(roomCode);
+
 
       if (!room) {
         return;
@@ -326,6 +369,9 @@ io.on("connection", (socket) => {
         room.totalPuzzles
       ) {
 
+        room.puzzlesSolved =
+          room.totalPuzzles;
+
         room.status =
           "victory";
 
@@ -340,9 +386,22 @@ io.on("connection", (socket) => {
         roomCode
       );
 
+
+      console.log(
+        "Acertijo resuelto:",
+        roomCode,
+        room.puzzlesSolved,
+        "/",
+        room.totalPuzzles
+      );
+
     }
   );
 
+
+  // ------------------------------------------------
+  // DESCONEXIÓN
+  // ------------------------------------------------
 
   socket.on("disconnect", () => {
 
@@ -402,6 +461,59 @@ io.on("connection", (socket) => {
 
 });
 
+
+// --------------------------------------------------
+// RELOJ GLOBAL DEL SERVIDOR
+// --------------------------------------------------
+
+setInterval(() => {
+
+  for (
+    const [roomCode, room]
+    of rooms
+  ) {
+
+    if (
+      room.status !==
+      "playing"
+    ) {
+      continue;
+    }
+
+
+    room.timeRemaining -= 1;
+
+
+    if (
+      room.timeRemaining <= 0
+    ) {
+
+      room.timeRemaining =
+        0;
+
+      room.status =
+        "defeat";
+
+      console.log(
+        "Tiempo agotado:",
+        roomCode
+      );
+
+    }
+
+
+    broadcastRoomState(
+      roomCode
+    );
+
+  }
+
+}, 1000);
+
+
+// --------------------------------------------------
+// ARRANCAR SERVIDOR
+// --------------------------------------------------
 
 const PORT =
   process.env.PORT || 3000;
