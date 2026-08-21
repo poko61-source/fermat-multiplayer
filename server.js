@@ -47,6 +47,8 @@ function createGameState() {
     puzzlesSolved: 0,
     totalPuzzles: TOTAL_PUZZLES,
     timeRemaining: GAME_DURATION,
+    bonusActive: false,
+    bonusRemaining: 0,
     players: []
   };
 }
@@ -63,6 +65,8 @@ function getRoomState(room) {
     puzzlesSolved: room.puzzlesSolved,
     totalPuzzles: room.totalPuzzles,
     timeRemaining: room.timeRemaining,
+    bonusActive: room.bonusActive,
+    bonusRemaining: room.bonusRemaining,
     players: room.players.length
   };
 }
@@ -374,13 +378,102 @@ io.on("connection", (socket) => {
       }
 
 
+        // ------------------------------------------------
+  // ACERTIJO RESUELTO
+  // ------------------------------------------------
+
+  socket.on(
+    "puzzleSolved",
+    () => {
+
+      const roomCode =
+        socket.roomCode;
+
+
+      const room =
+        rooms.get(roomCode);
+
+
+      if (!room) {
+        return;
+      }
+
+
+      if (
+        room.status !==
+        "playing"
+      ) {
+
+        return;
+      }
+
+
+      // No aceptar otro acierto mientras
+      // está activa la bonificación.
+      if (
+        room.bonusActive
+      ) {
+
+        return;
+      }
+
+
       room.puzzlesSolved += 1;
 
 
-      // Bonificación compartida
-      // para toda la sala.
-      room.timeRemaining +=
-        PUZZLE_BONUS;
+      /*
+       * El siguiente acertijo se considera
+       * activo inmediatamente después del acierto.
+       */
+
+      if (
+        room.puzzlesSolved >=
+        room.totalPuzzles
+      ) {
+
+        room.puzzlesSolved =
+          room.totalPuzzles;
+
+        room.status =
+          "victory";
+
+      } else {
+
+        room.currentPuzzle += 1;
+
+
+        /*
+         * El reloj NO aumenta.
+         * Simplemente queda detenido
+         * durante 30 segundos.
+         */
+
+        room.bonusActive =
+          true;
+
+        room.bonusRemaining =
+          PUZZLE_BONUS;
+
+      }
+
+
+      broadcastRoomState(
+        roomCode
+      );
+
+
+      console.log(
+        "Acertijo resuelto:",
+        roomCode,
+        room.puzzlesSolved,
+        "/",
+        room.totalPuzzles,
+        "Bonificación:",
+        room.bonusRemaining
+      );
+
+    }
+  );
 
 
       if (
@@ -495,33 +588,55 @@ setInterval(() => {
   ) {
 
     if (
-      room.status !==
-      "playing"
-    ) {
-      continue;
-    }
+  room.status !==
+  "playing"
+) {
+  continue;
+}
 
 
-    room.timeRemaining -= 1;
+if (
+  room.bonusActive
+) {
+
+  room.bonusRemaining -= 1;
 
 
-    if (
-      room.timeRemaining <= 0
-    ) {
+  if (
+    room.bonusRemaining <= 0
+  ) {
 
-      room.timeRemaining =
-        0;
+    room.bonusRemaining =
+      0;
 
-      room.status =
-        "defeat";
+    room.bonusActive =
+      false;
 
-      console.log(
-        "Tiempo agotado:",
-        roomCode
-      );
+  }
 
-    }
+} else {
 
+  room.timeRemaining -= 1;
+
+
+  if (
+    room.timeRemaining <= 0
+  ) {
+
+    room.timeRemaining =
+      0;
+
+    room.status =
+      "defeat";
+
+    console.log(
+      "Tiempo agotado:",
+      roomCode
+    );
+
+  }
+
+}
 
     broadcastRoomState(
       roomCode
