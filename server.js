@@ -5,6 +5,12 @@ import { Server } from "socket.io";
 const app = express();
 const httpServer = createServer(app);
 
+app.get("/test", (req, res) => {
+  res.sendFile(
+    new URL("./test.html", import.meta.url).pathname
+  );
+});
+
 const io = new Server(httpServer, {
   cors: {
     origin: "*"
