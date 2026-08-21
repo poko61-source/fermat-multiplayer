@@ -16,6 +16,7 @@ const rooms = new Map();
 const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
+const PUZZLE_BONUS = 30;
 
 
 // --------------------------------------------------
@@ -335,6 +336,10 @@ io.on("connection", (socket) => {
   // ACERTIJO RESUELTO
   // ------------------------------------------------
 
+    // ------------------------------------------------
+  // ACERTIJO RESUELTO
+  // ------------------------------------------------
+
   socket.on(
     "puzzleSolved",
     () => {
@@ -361,7 +366,21 @@ io.on("connection", (socket) => {
       }
 
 
+      if (
+        room.currentPuzzle <= 0
+      ) {
+
+        return;
+      }
+
+
       room.puzzlesSolved += 1;
+
+
+      // Bonificación compartida
+      // para toda la sala.
+      room.timeRemaining +=
+        PUZZLE_BONUS;
 
 
       if (
@@ -392,7 +411,9 @@ io.on("connection", (socket) => {
         roomCode,
         room.puzzlesSolved,
         "/",
-        room.totalPuzzles
+        room.totalPuzzles,
+        "Tiempo:",
+        room.timeRemaining
       );
 
     }
