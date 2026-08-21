@@ -47,8 +47,10 @@ function createGameState() {
     puzzlesSolved: 0,
     totalPuzzles: TOTAL_PUZZLES,
     timeRemaining: GAME_DURATION,
+
     bonusActive: false,
     bonusRemaining: 0,
+
     players: []
   };
 }
@@ -61,13 +63,27 @@ function createGameState() {
 function getRoomState(room) {
   return {
     status: room.status,
-    currentPuzzle: room.currentPuzzle,
-    puzzlesSolved: room.puzzlesSolved,
-    totalPuzzles: room.totalPuzzles,
-    timeRemaining: room.timeRemaining,
-    bonusActive: room.bonusActive,
-    bonusRemaining: room.bonusRemaining,
-    players: room.players.length
+
+    currentPuzzle:
+      room.currentPuzzle,
+
+    puzzlesSolved:
+      room.puzzlesSolved,
+
+    totalPuzzles:
+      room.totalPuzzles,
+
+    timeRemaining:
+      room.timeRemaining,
+
+    bonusActive:
+      room.bonusActive,
+
+    bonusRemaining:
+      room.bonusRemaining,
+
+    players:
+      room.players.length
   };
 }
 
@@ -77,7 +93,9 @@ function getRoomState(room) {
 // --------------------------------------------------
 
 function broadcastRoomState(roomCode) {
-  const room = rooms.get(roomCode);
+
+  const room =
+    rooms.get(roomCode);
 
   if (!room) {
     return;
@@ -106,57 +124,69 @@ io.on("connection", (socket) => {
   // CREAR SALA
   // ------------------------------------------------
 
-  socket.on("createRoom", () => {
+  socket.on(
+    "createRoom",
+    () => {
 
-    let roomCode;
+      let roomCode;
 
-    do {
+      do {
 
-      roomCode = Math.random()
-        .toString(36)
-        .substring(2, 6)
-        .toUpperCase();
+        roomCode =
+          Math.random()
+            .toString(36)
+            .substring(2, 6)
+            .toUpperCase();
 
-    } while (rooms.has(roomCode));
-
-
-    const room = createGameState();
-
-    rooms.set(
-      roomCode,
-      room
-    );
+      } while (
+        rooms.has(roomCode)
+      );
 
 
-    socket.join(roomCode);
-
-    room.players.push(
-      socket.id
-    );
-
-    socket.roomCode =
-      roomCode;
+      const room =
+        createGameState();
 
 
-    socket.emit(
-      "roomCreated",
-      {
+      rooms.set(
+        roomCode,
+        room
+      );
+
+
+      socket.join(
         roomCode
-      }
-    );
+      );
 
 
-    broadcastRoomState(
-      roomCode
-    );
+      room.players.push(
+        socket.id
+      );
 
 
-    console.log(
-      "Sala creada:",
-      roomCode
-    );
+      socket.roomCode =
+        roomCode;
 
-  });
+
+      socket.emit(
+        "roomCreated",
+        {
+          roomCode
+        }
+      );
+
+
+      broadcastRoomState(
+        roomCode
+      );
+
+
+      console.log(
+        "Sala creada:",
+        roomCode
+      );
+
+    }
+  );
 
 
   // ------------------------------------------------
@@ -216,11 +246,15 @@ io.on("connection", (socket) => {
       }
 
 
-      socket.join(code);
+      socket.join(
+        code
+      );
+
 
       room.players.push(
         socket.id
       );
+
 
       socket.roomCode =
         code;
@@ -312,14 +346,25 @@ io.on("connection", (socket) => {
       room.status =
         "playing";
 
+
       room.currentPuzzle =
         1;
+
 
       room.puzzlesSolved =
         0;
 
+
       room.timeRemaining =
         GAME_DURATION;
+
+
+      room.bonusActive =
+        false;
+
+
+      room.bonusRemaining =
+        0;
 
 
       broadcastRoomState(
@@ -340,10 +385,6 @@ io.on("connection", (socket) => {
   // ACERTIJO RESUELTO
   // ------------------------------------------------
 
-    // ------------------------------------------------
-  // ACERTIJO RESUELTO
-  // ------------------------------------------------
-
   socket.on(
     "puzzleSolved",
     () => {
@@ -368,55 +409,33 @@ io.on("connection", (socket) => {
 
         return;
       }
-
-
-      if (
-        room.currentPuzzle <= 0
-      ) {
-
-        return;
-      }
-
-
-        // ------------------------------------------------
-  // ACERTIJO RESUELTO
-  // ------------------------------------------------
-
-  socket.on(
-    "puzzleSolved",
-    () => {
-
-      const roomCode =
-        socket.roomCode;
-
-
-      const room =
-        rooms.get(roomCode);
-
-
-      if (!room) {
-        return;
-      }
-
-
-      if (
-        room.status !==
-        "playing"
-      ) {
-
-        return;
-      }
-
-
-      // No aceptar otro acierto mientras
-      // está activa la bonificación.
-      
-      room.puzzlesSolved += 1;
 
 
       /*
-       * El siguiente acertijo se considera
-       * activo inmediatamente después del acierto.
+       * Evitar dos registros del mismo
+       * acertijo durante la pausa.
+       */
+
+      if (
+        room.bonusActive
+      ) {
+
+        return;
+      }
+
+
+      /*
+       * Registrar inmediatamente
+       * el acierto.
+       */
+
+      room.puzzlesSolved +=
+        1;
+
+
+      /*
+       * Si se han conseguido los
+       * 5 aciertos, termina la partida.
        */
 
       if (
@@ -427,22 +446,37 @@ io.on("connection", (socket) => {
         room.puzzlesSolved =
           room.totalPuzzles;
 
+
         room.status =
           "victory";
 
+
+        room.bonusActive =
+          false;
+
+
+        room.bonusRemaining =
+          0;
+
       } else {
 
-        room.currentPuzzle += 1;
+        /*
+         * El siguiente acertijo pasa
+         * a ser el actual inmediatamente.
+         */
+
+        room.currentPuzzle +=
+          1;
 
 
         /*
-         * El reloj NO aumenta.
-         * Simplemente queda detenido
+         * El reloj global se detiene
          * durante 30 segundos.
          */
 
         room.bonusActive =
           true;
+
 
         room.bonusRemaining =
           PUZZLE_BONUS;
@@ -461,45 +495,8 @@ io.on("connection", (socket) => {
         room.puzzlesSolved,
         "/",
         room.totalPuzzles,
-        "Bonificación:",
+        "Pausa:",
         room.bonusRemaining
-      );
-
-    }
-  );
-
-
-      if (
-        room.puzzlesSolved >=
-        room.totalPuzzles
-      ) {
-
-        room.puzzlesSolved =
-          room.totalPuzzles;
-
-        room.status =
-          "victory";
-
-      } else {
-
-        room.currentPuzzle += 1;
-
-      }
-
-
-      broadcastRoomState(
-        roomCode
-      );
-
-
-      console.log(
-        "Acertijo resuelto:",
-        roomCode,
-        room.puzzlesSolved,
-        "/",
-        room.totalPuzzles,
-        "Tiempo:",
-        room.timeRemaining
       );
 
     }
@@ -510,61 +507,66 @@ io.on("connection", (socket) => {
   // DESCONEXIÓN
   // ------------------------------------------------
 
-  socket.on("disconnect", () => {
+  socket.on(
+    "disconnect",
+    () => {
 
-    const roomCode =
-      socket.roomCode;
-
-
-    if (!roomCode) {
-      return;
-    }
+      const roomCode =
+        socket.roomCode;
 
 
-    const room =
-      rooms.get(roomCode);
+      if (!roomCode) {
+        return;
+      }
 
 
-    if (!room) {
-      return;
-    }
+      const room =
+        rooms.get(roomCode);
 
 
-    room.players =
-      room.players.filter(
-        (id) =>
-          id !== socket.id
-      );
+      if (!room) {
+        return;
+      }
 
 
-    if (
-      room.players.length === 0
-    ) {
+      room.players =
+        room.players.filter(
+          (id) =>
+            id !== socket.id
+        );
 
-      rooms.delete(
+
+      if (
+        room.players.length === 0
+      ) {
+
+        rooms.delete(
+          roomCode
+        );
+
+
+        console.log(
+          "Sala eliminada:",
+          roomCode
+        );
+
+
+        return;
+      }
+
+
+      broadcastRoomState(
         roomCode
       );
+
 
       console.log(
-        "Sala eliminada:",
-        roomCode
+        "Jugador desconectado:",
+        socket.id
       );
 
-      return;
     }
-
-
-    broadcastRoomState(
-      roomCode
-    );
-
-
-    console.log(
-      "Jugador desconectado:",
-      socket.id
-    );
-
-  });
+  );
 
 });
 
@@ -573,71 +575,93 @@ io.on("connection", (socket) => {
 // RELOJ GLOBAL DEL SERVIDOR
 // --------------------------------------------------
 
-setInterval(() => {
+setInterval(
+  () => {
 
-  for (
-    const [roomCode, room]
-    of rooms
-  ) {
+    for (
+      const [roomCode, room]
+      of rooms
+    ) {
 
-    if (
-  room.status !==
-  "playing"
-) {
-  continue;
-}
+      if (
+        room.status !==
+        "playing"
+      ) {
 
-
-if (
-  room.bonusActive
-) {
-
-  room.bonusRemaining -= 1;
+        continue;
+      }
 
 
-  if (
-    room.bonusRemaining <= 0
-  ) {
+      /*
+       * DURANTE LA BONIFICACIÓN:
+       *
+       * El tiempo global NO disminuye.
+       */
 
-    room.bonusRemaining =
-      0;
+      if (
+        room.bonusActive
+      ) {
 
-    room.bonusActive =
-      false;
-
-  }
-
-} else {
-
-  room.timeRemaining -= 1;
+        room.bonusRemaining -=
+          1;
 
 
-  if (
-    room.timeRemaining <= 0
-  ) {
+        if (
+          room.bonusRemaining <=
+          0
+        ) {
 
-    room.timeRemaining =
-      0;
+          room.bonusRemaining =
+            0;
 
-    room.status =
-      "defeat";
 
-    console.log(
-      "Tiempo agotado:",
-      roomCode
-    );
+          room.bonusActive =
+            false;
 
-  }
+        }
 
-}
+      } else {
 
-    broadcastRoomState(
-      roomCode
-    );
+        /*
+         * RELOJ NORMAL
+         */
 
-  }
+        room.timeRemaining -=
+          1;
 
-}, 1000);
+
+        if (
+          room.timeRemaining <=
+          0
+        ) {
+
+          room.timeRemaining =
+            0;
+
+
+          room.status =
+            "defeat";
+
+
+          console.log(
+            "Tiempo agotado:",
+            roomCode
+          );
+
+        }
+
+      }
+
+
+      broadcastRoomState(
+        roomCode
+      );
+
+    }
+
+  },
+  1000
+);
 
 
 // --------------------------------------------------
