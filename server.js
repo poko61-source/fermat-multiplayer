@@ -83,7 +83,9 @@ function getRoomState(room) {
       room.bonusRemaining,
 
     players:
-      room.players.length
+      room.players.length,
+    hostId:
+      room.players[0]
   };
 }
 
