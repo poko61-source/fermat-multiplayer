@@ -453,8 +453,46 @@ room.currentQuestionResolved = true;
        * el acierto.
        */
 
-      room.puzzlesSolved +=
-        1;
+      room.puzzlesSolved += 1;
+
+      if (
+      room.puzzlesSolved >=
+      room.totalPuzzles
+      ) {
+
+      room.puzzlesSolved =
+        room.totalPuzzles;
+
+      room.currentPuzzle =
+        room.totalPuzzles;
+
+      room.status =
+        "victory";
+
+      room.bonusActive =
+        false;
+
+      room.bonusRemaining =
+        0;
+
+    } else {
+
+      room.currentPuzzle += 1;
+
+      room.currentQuestion =
+        Math.floor(
+          Math.random() * 19
+        ) + 1;
+
+      room.currentQuestionResolved =
+    false;
+
+      room.bonusActive =
+        true;
+
+      room.bonusRemaining =
+        PUZZLE_BONUS;
+    }
 
       room.currentPuzzle +=
         1;
