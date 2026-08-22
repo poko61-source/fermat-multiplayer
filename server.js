@@ -400,70 +400,65 @@ io.on("connection", (socket) => {
   // ------------------------------------------------
 
   socket.on(
-    "puzzleSolved",
-    (data) => {
+  "puzzleSolved",
+  () => {
 
-      const roomCode =
-        socket.roomCode;
+    const roomCode =
+      socket.roomCode;
 
+    const room =
+      rooms.get(roomCode);
 
-      const room =
-        rooms.get(roomCode);
+    if (!room) {
+      return;
+    }
 
+    if (
+      room.status !==
+      "playing"
+    ) {
+      return;
+    }
 
-      if (!room) {
-        return;
-      }
+    /*
+     * No aceptar otro acierto
+     * durante la pausa.
+     */
+    if (
+      room.bonusActive
+    ) {
+      return;
+    }
 
+    /*
+     * No registrar dos veces
+     * el mismo acertijo.
+     */
+    if (
+      room.currentQuestionResolved
+    ) {
+      return;
+    }
 
-      if (
-        room.status !==
-        "playing"
-      ) {
+    room.currentQuestionResolved =
+      true;
 
-        return;
-      }
+    /*
+     * El acierto pertenece a la sala,
+     * no a cada jugador.
+     */
+    room.puzzlesSolved +=
+      1;
 
-
-      /*
-       * Evitar dos registros del mismo
-       * acertijo durante la pausa.
-       */
-
-      if (
-        room.bonusActive
-      ) {
-
-        return;
-      }
-
-      
-
-      if (
-        room.currentQuestionResolved
-      ) {
-        return;
-      }
-
-room.currentQuestionResolved = true;
-
-
-      /*
-       * Registrar inmediatamente
-       * el acierto.
-       */
-
-      room.puzzlesSolved += 1;
-
-      if (
+    /*
+     * VICTORIA
+     */
+    if (
       room.puzzlesSolved >=
       room.totalPuzzles
-      ) {
+    ) {
 
       room.puzzlesSolved =
-        room.totalPuzzles;
-
-      room.currentPuzzle =
         room.totalPuzzles;
 
       room.status =
@@ -477,14 +472,9 @@ room.currentQuestionResolved = true;
 
     } else {
 
-     
-      room.bonusActive =
-        true;
-
-      room.bonusRemaining =
-        PUZZLE_BONUS;
-    }
-
+      /*
+       * Elegir UN nuevo acertijo.
+       */
       room.currentPuzzle +=
         1;
 
@@ -493,66 +483,37 @@ room.currentQuestionResolved = true;
           Math.random() * 19
         ) + 1;
 
+      room.currentQuestionResolved =
+        false;
+
       /*
-       * Si se han conseguido los
-       * 5 aciertos, termina la partida.
+       * Pausa de bonificación.
        */
+      room.bonusActive =
+        true;
 
-      if (
-        room.puzzlesSolved >=
-        room.totalPuzzles
-      ) {
-
-        room.puzzlesSolved =
-          room.totalPuzzles;
-
-
-        room.status =
-          "victory";
-
-
-        room.bonusActive =
-          false;
-
-
-        room.bonusRemaining =
-          0;
-
-      } else {
-
-       
-        /*
-         * El reloj global se detiene
-         * durante 30 segundos.
-         */
-
-        room.bonusActive =
-          true;
-
-
-        room.bonusRemaining =
-          PUZZLE_BONUS;
-
-      }
-
-
-      broadcastRoomState(
-        roomCode
-      );
-
-
-      console.log(
-        "Acertijo resuelto:",
-        roomCode,
-        room.puzzlesSolved,
-        "/",
-        room.totalPuzzles,
-        "Pausa:",
-        room.bonusRemaining
-      );
-
+      room.bonusRemaining =
+        PUZZLE_BONUS;
     }
-  );
+
+    broadcastRoomState(
+      roomCode
+    );
+
+    console.log(
+      "Acertijo resuelto:",
+      roomCode,
+      room.puzzlesSolved,
+      "/",
+      room.totalPuzzles,
+      "Nuevo acertijo:",
+      room.currentQuestion,
+      "Pausa:",
+      room.bonusRemaining
+    );
+
+  }
+);
 
 
   // ------------------------------------------------
