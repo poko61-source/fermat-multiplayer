@@ -68,6 +68,9 @@ function getRoomState(room) {
     currentPuzzle:
       room.currentPuzzle,
 
+    currentQuestion:
+      room.currentQuestion,
+
     puzzlesSolved:
       room.puzzlesSolved,
 
@@ -352,6 +355,11 @@ io.on("connection", (socket) => {
 
       room.currentPuzzle =
         1;
+
+      room.currentQuestion =
+        Math.floor(
+          Math.random() * 19
+        ) + 1;
 
 
       room.puzzlesSolved =
