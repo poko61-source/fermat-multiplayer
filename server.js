@@ -477,13 +477,7 @@ room.currentQuestionResolved = true;
 
     } else {
 
-      room.currentPuzzle += 1;
-
-      room.currentQuestion =
-        Math.floor(
-          Math.random() * 19
-        ) + 1;
-
+      
       room.currentQuestionResolved =
     false;
 
