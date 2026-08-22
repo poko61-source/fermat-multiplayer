@@ -398,7 +398,7 @@ io.on("connection", (socket) => {
 
   socket.on(
     "puzzleSolved",
-    () => {
+    (data) => {
 
       const roomCode =
         socket.roomCode;
@@ -442,6 +442,10 @@ io.on("connection", (socket) => {
 
       room.puzzlesSolved +=
         1;
+      room.currentPuzzle +=
+      1;
+      room.currentQuestion =
+      data.nextQuestion;
       room.currentQuestion =
         Math.floor(
           Math.random() * 19
