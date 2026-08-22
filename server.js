@@ -442,10 +442,10 @@ io.on("connection", (socket) => {
 
       room.puzzlesSolved +=
         1;
+
       room.currentPuzzle +=
-      1;
-      room.currentQuestion =
-      data.nextQuestion;
+        1;
+
       room.currentQuestion =
         Math.floor(
           Math.random() * 19
@@ -478,15 +478,7 @@ io.on("connection", (socket) => {
 
       } else {
 
-        /*
-         * El siguiente acertijo pasa
-         * a ser el actual inmediatamente.
-         */
-
-        room.currentPuzzle +=
-          1;
-
-
+       
         /*
          * El reloj global se detiene
          * durante 30 segundos.
