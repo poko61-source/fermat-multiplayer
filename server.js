@@ -361,6 +361,9 @@ io.on("connection", (socket) => {
           Math.random() * 19
         ) + 1;
 
+      room.currentQuestionResolved =
+        false;
+
 
       room.puzzlesSolved =
         0;
@@ -433,6 +436,16 @@ io.on("connection", (socket) => {
 
         return;
       }
+
+      
+
+      if (
+        room.currentQuestionResolved
+      ) {
+        return;
+      }
+
+room.currentQuestionResolved = true;
 
 
       /*
