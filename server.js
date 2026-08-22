@@ -477,10 +477,7 @@ room.currentQuestionResolved = true;
 
     } else {
 
-      
-      room.currentQuestionResolved =
-    false;
-
+     
       room.bonusActive =
         true;
 
