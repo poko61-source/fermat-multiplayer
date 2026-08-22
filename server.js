@@ -442,7 +442,10 @@ io.on("connection", (socket) => {
 
       room.puzzlesSolved +=
         1;
-
+      room.currentQuestion =
+        Math.floor(
+          Math.random() * 19
+        ) + 1;
 
       /*
        * Si se han conseguido los
