@@ -86,6 +86,7 @@ function createGameState() {
 
     players: [],
     questionPool: []
+    failCount: 0
   };
 }
 
@@ -402,6 +403,9 @@ io.on("connection", (socket) => {
       room.puzzlesSolved =
         0;
 
+      room.failCount =
+        0;
+
 
       room.timeRemaining =
         GAME_DURATION;
@@ -559,6 +563,9 @@ io.on("connection", (socket) => {
       room.currentQuestion =
         room.questionPool.shift();
 
+      room.failCount =
+        0;
+
       /*
        * MUY IMPORTANTE:
        * el nuevo acertijo todavía no está
@@ -598,6 +605,155 @@ io.on("connection", (socket) => {
       room.currentQuestion,
       "Pausa:",
       room.bonusRemaining
+    );
+
+  }
+);
+
+  // ------------------------------------------------
+// FALLO DE ACERTIJO
+// ------------------------------------------------
+
+socket.on(
+  "questionFailed",
+  (data) => {
+
+    const roomCode =
+      socket.roomCode;
+
+    const room =
+      rooms.get(roomCode);
+
+    if (!room) {
+      return;
+    }
+
+    if (
+      room.status !==
+      "playing"
+    ) {
+      return;
+    }
+
+    /*
+     * Comprobar que el fallo pertenece
+     * al acertijo que está actualmente
+     * en la sala.
+     */
+    const failedQuestion =
+      Number(
+        data?.question
+      );
+
+    if (
+      failedQuestion !==
+      Number(
+        room.currentQuestion
+      )
+    ) {
+
+      console.log(
+        "MULTIJUGADOR: fallo antiguo ignorado",
+        {
+          jugador:
+            socket.id,
+
+          recibido:
+            failedQuestion,
+
+          actual:
+            room.currentQuestion
+        }
+      );
+
+      return;
+    }
+
+
+    /*
+     * Contar el fallo para toda la sala.
+     */
+    room.failCount +=
+      1;
+
+
+    console.log(
+      "MULTIJUGADOR: FALLO",
+      {
+        jugador:
+          socket.id,
+
+        acertijo:
+          room.currentQuestion,
+
+        fallos:
+          room.failCount,
+
+        max:
+          3
+      }
+    );
+
+
+    /*
+     * Todavía quedan intentos.
+     */
+    if (
+      room.failCount <
+      3
+    ) {
+
+      broadcastRoomState(
+        roomCode
+      );
+
+      return;
+    }
+
+
+    /*
+     * Tres fallos:
+     * abandonar el acertijo actual
+     * para toda la sala.
+     */
+
+    room.currentPuzzle +=
+      1;
+
+    room.currentQuestion =
+      room.questionPool.shift();
+
+    room.currentQuestionResolved =
+      false;
+
+    room.failCount =
+      0;
+
+
+    /*
+     * No hay bonificación por fallo.
+     */
+    room.bonusActive =
+      false;
+
+    room.bonusRemaining =
+      0;
+
+
+    console.log(
+      "MULTIJUGADOR: TRES FALLOS, NUEVO ACERTIJO",
+      {
+        puzzle:
+          room.currentPuzzle,
+
+        question:
+          room.currentQuestion
+      }
+    );
+
+
+    broadcastRoomState(
+      roomCode
     );
 
   }
