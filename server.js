@@ -23,6 +23,7 @@ const PUZZLE_BONUS = 30;
 // PÁGINAS
 // --------------------------------------------------
 
+
 app.get("/", (req, res) => {
   res.send(
     "Servidor multijugador de La Habitación de Fermat funcionando."
