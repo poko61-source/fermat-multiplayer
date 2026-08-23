@@ -566,6 +566,9 @@ io.on("connection", (socket) => {
       room.failCount =
         0;
 
+      room.questionStartedAt =
+        Date.now();
+
       /*
        * MUY IMPORTANTE:
        * el nuevo acertijo todavía no está
