@@ -41,6 +41,38 @@ app.get("/test", (req, res) => {
 // CREAR ESTADO DE UNA PARTIDA
 // --------------------------------------------------
 
+function createQuestionPool() {
+
+  const questions =
+    Array.from(
+      { length: 19 },
+      (_, index) =>
+        index + 1
+    );
+
+  for (
+    let i = questions.length - 1;
+    i > 0;
+    i--
+  ) {
+
+    const j =
+      Math.floor(
+        Math.random() * (i + 1)
+      );
+
+    [
+      questions[i],
+      questions[j]
+    ] = [
+      questions[j],
+      questions[i]
+    ];
+  }
+
+  return questions;
+}
+
 function createGameState() {
   return {
     status: "waiting",
@@ -53,6 +85,7 @@ function createGameState() {
     bonusRemaining: 0,
 
     players: []
+    questionPool: []
   };
 }
 
@@ -355,11 +388,12 @@ io.on("connection", (socket) => {
 
       room.currentPuzzle =
         1;
-
+      
+      room.questionPool =
+        createQuestionPool();
+      
       room.currentQuestion =
-        Math.floor(
-          Math.random() * 19
-        ) + 1;
+        room.questionPool.shift();
 
       room.currentQuestionResolved =
         false;
@@ -508,12 +542,11 @@ io.on("connection", (socket) => {
       /*
        * Elegir UN nuevo acertijo.
        */
-      room.currentPuzzle += 1;
-
+      room.currentPuzzle +=
+        1;
+      
       room.currentQuestion =
-        Math.floor(
-          Math.random() * 19
-        ) + 1;
+        room.questionPool.shift();
 
       /*
        * MUY IMPORTANTE:
