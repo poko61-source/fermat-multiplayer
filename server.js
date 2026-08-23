@@ -521,43 +521,7 @@ io.on("connection", (socket) => {
         }
       );
     }
-      room.puzzlesSolved =
-        room.totalPuzzles;
-
-      room.status =
-        "victory";
-
-      room.bonusActive =
-        false;
-
-      room.bonusRemaining =
-        0;
-
-    } else {
-
-      /*
-       * Elegir UN nuevo acertijo.
-       */
-      room.currentPuzzle +=
-        1;
-
-      room.currentQuestion =
-        Math.floor(
-          Math.random() * 19
-        ) + 1;
-
-      room.currentQuestionResolved =
-        false;
-
-      /*
-       * Pausa de bonificación.
-       */
-      room.bonusActive =
-        true;
-
-      room.bonusRemaining =
-        PUZZLE_BONUS;
-    }
+      
 
     broadcastRoomState(
       roomCode
