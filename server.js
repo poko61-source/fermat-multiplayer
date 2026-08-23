@@ -444,11 +444,20 @@ io.on("connection", (socket) => {
       true;
 
     /*
+         /*
      * El acierto pertenece a la sala,
      * no a cada jugador.
      */
-    room.puzzlesSolved +=
-      1;
+    room.puzzlesSolved += 1;
+
+    console.log(
+      "MULTIJUGADOR: ACIERTO REGISTRADO",
+      {
+        jugador: socket.id,
+        acertijo: room.currentQuestion,
+        total: room.puzzlesSolved
+      }
+    );
 
     /*
      * VICTORIA
@@ -457,7 +466,61 @@ io.on("connection", (socket) => {
       room.puzzlesSolved >=
       room.totalPuzzles
     ) {
+      room.puzzlesSolved =
+        room.totalPuzzles;
 
+      room.status =
+        "victory";
+
+      room.bonusActive =
+        false;
+
+      room.bonusRemaining =
+        0;
+
+      console.log(
+        "MULTIJUGADOR: VICTORIA",
+        roomCode
+      );
+
+    } else {
+
+      /*
+       * Elegir UN nuevo acertijo.
+       */
+      room.currentPuzzle += 1;
+
+      room.currentQuestion =
+        Math.floor(
+          Math.random() * 19
+        ) + 1;
+
+      /*
+       * MUY IMPORTANTE:
+       * el nuevo acertijo todavía no está
+       * resuelto.
+       */
+      room.currentQuestionResolved =
+        false;
+
+      /*
+       * Pausa de bonificación.
+       */
+      room.bonusActive =
+        true;
+
+      room.bonusRemaining =
+        PUZZLE_BONUS;
+
+      console.log(
+        "MULTIJUGADOR: NUEVO ACERTIJO",
+        {
+          puzzle: room.currentPuzzle,
+          question: room.currentQuestion,
+          bonus: room.bonusRemaining
+        }
+      );
+    }
       room.puzzlesSolved =
         room.totalPuzzles;
 
