@@ -522,15 +522,12 @@ io.on("connection", (socket) => {
        */
       room.currentQuestionResolved =
         false;
-
-      room.currentQuestionResolved =
-        false;
-
+      
       room.bonusActive =
-        false;
-
+        true;
+      
       room.bonusRemaining =
-        0;
+        PUZZLE_BONUS;
 
       console.log(
         "MULTIJUGADOR: NUEVO ACERTIJO",
