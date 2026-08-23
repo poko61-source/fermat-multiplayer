@@ -420,16 +420,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    /*
-     * No aceptar otro acierto
-     * durante la pausa.
-     */
-    if (
-      room.bonusActive
-    ) {
-      return;
-    }
-
+    
     /*
      * No registrar dos veces
      * el mismo acertijo.
@@ -503,14 +494,14 @@ io.on("connection", (socket) => {
       room.currentQuestionResolved =
         false;
 
-      /*
-       * Pausa de bonificación.
-       */
+      room.currentQuestionResolved =
+        false;
+
       room.bonusActive =
-        true;
+        false;
 
       room.bonusRemaining =
-        PUZZLE_BONUS;
+        0;
 
       console.log(
         "MULTIJUGADOR: NUEVO ACERTIJO",
