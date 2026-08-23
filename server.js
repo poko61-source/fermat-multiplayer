@@ -498,7 +498,7 @@ io.on("connection", (socket) => {
       true;
 
     /*
-         /*
+    
      * El acierto pertenece a la sala,
      * no a cada jugador.
      */
