@@ -401,15 +401,44 @@ io.on("connection", (socket) => {
 
   socket.on(
   "puzzleSolved",
-  () => {
+  (data) => {
 
-    const roomCode =
-      socket.roomCode;
-
-    const room =
-      rooms.get(roomCode);
-
-    if (!room) {
+        const roomCode =
+          socket.roomCode;
+    
+        const room =
+          rooms.get(roomCode);
+    
+        if (!room) {
+          return;
+        }
+    
+        const solvedQuestion =
+      Number(
+        data?.question
+      );
+    
+    if (
+      solvedQuestion !==
+      Number(
+        room.currentQuestion
+      )
+    ) {
+    
+      console.log(
+        "MULTIJUGADOR: acierto antiguo ignorado",
+        {
+          jugador:
+            socket.id,
+    
+          recibido:
+            solvedQuestion,
+    
+          actual:
+            room.currentQuestion
+        }
+      );
+    
       return;
     }
 
