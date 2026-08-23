@@ -532,6 +532,17 @@ io.on("connection", (socket) => {
       room.bonusRemaining =
         0;
 
+      io.to(roomCode).emit(
+        "gameVictory",
+        {
+          puzzlesSolved:
+            room.puzzlesSolved,
+      
+          totalPuzzles:
+            room.totalPuzzles
+        }
+      );
+
       console.log(
         "MULTIJUGADOR: VICTORIA",
         roomCode
