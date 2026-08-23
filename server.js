@@ -732,6 +732,9 @@ socket.on(
     room.failCount =
       0;
 
+    room.questionStartedAt =
+      Date.now();
+
 
     /*
      * No hay bonificación por fallo.
