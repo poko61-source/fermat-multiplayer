@@ -499,14 +499,26 @@ io.on("connection", (socket) => {
     }
 
     room.currentQuestionResolved =
-      true;
-
-    /*
-    
-     * El acierto pertenece a la sala,
-     * no a cada jugador.
-     */
-    room.puzzlesSolved += 1;
+        true;
+      
+      
+      /*
+       * Avisar a TODOS los jugadores
+       * de la sala de que ha habido un acierto.
+       */
+      io.to(roomCode).emit(
+        "puzzleSound",
+        {
+          type: "success"
+        }
+      );
+      
+      
+      /*
+       * El acierto pertenece a la sala,
+       * no a cada jugador.
+       */
+      room.puzzlesSolved += 1;
 
     console.log(
       "MULTIJUGADOR: ACIERTO REGISTRADO",
@@ -671,6 +683,24 @@ socket.on(
 
       return;
     }
+
+    /*
+     * Avisar a TODOS los jugadores
+     * de la sala del fallo.
+     */
+    io.to(roomCode).emit(
+      "puzzleSound",
+      {
+        type: "fail"
+      }
+    );
+
+
+/*
+ * Contar el fallo para toda la sala.
+ */
+room.failCount +=
+  1;
 
 
     /*
