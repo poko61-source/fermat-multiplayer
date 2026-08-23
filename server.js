@@ -85,7 +85,7 @@ function createGameState() {
     bonusRemaining: 0,
 
     players: [],
-    questionPool: []
+    questionPool: [],
     failCount: 0
   };
 }
