@@ -18,6 +18,7 @@ const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
 const PUZZLE_BONUS = 30;
+const ROOM_IDLE_TIMEOUT = 15 * 60 * 1000;
 
 // --------------------------------------------------
 // PÁGINAS
@@ -76,6 +77,8 @@ function createQuestionPool() {
 function createGameState() {
   return {
     status: "waiting",
+    currentLevel: 1,
+    completedLevels: [],
     currentPuzzle: 0,
     puzzlesSolved: 0,
     totalPuzzles: TOTAL_PUZZLES,
@@ -85,6 +88,8 @@ function createGameState() {
     bonusRemaining: 0,
 
     players: [],
+    playerTokens: {},
+    lastActivityAt: Date.now(),
     questionPool: [],
     failCount: 0
   };
@@ -98,6 +103,8 @@ function createGameState() {
 function getRoomState(room) {
   return {
     status: room.status,
+    currentLevel: room.currentLevel,
+    completedLevels: room.completedLevels,
 
     currentPuzzle:
       room.currentPuzzle,
@@ -166,7 +173,7 @@ io.on("connection", (socket) => {
 
   socket.on(
     "createRoom",
-    () => {
+    (data = {}) => {
 
       let roomCode;
 
@@ -186,6 +193,16 @@ io.on("connection", (socket) => {
       const room =
         createGameState();
 
+      const playerToken =
+        String(data?.playerToken || "").trim();
+
+      if (!playerToken) {
+        socket.emit("roomError", "Identidad de jugador no válida.");
+        return;
+      }
+
+      room.playerTokens[playerToken] = socket.id;
+
 
       rooms.set(
         roomCode,
@@ -202,9 +219,12 @@ io.on("connection", (socket) => {
         socket.id
       );
 
+      room.lastActivityAt = Date.now();
 
       socket.roomCode =
         roomCode;
+      socket.playerToken =
+        playerToken;
 
 
       socket.emit(
@@ -235,12 +255,20 @@ io.on("connection", (socket) => {
 
   socket.on(
     "joinRoom",
-    (roomCode) => {
+    (data = {}) => {
 
       const code =
-        String(roomCode)
+        String(data?.roomCode || data || "")
           .trim()
           .toUpperCase();
+
+      const playerToken =
+        String(data?.playerToken || "").trim();
+
+      if (!playerToken) {
+        socket.emit("roomError", "Identidad de jugador no válida.");
+        return;
+      }
 
 
       const room =
@@ -295,9 +323,13 @@ io.on("connection", (socket) => {
         socket.id
       );
 
+      room.playerTokens[playerToken] = socket.id;
+      room.lastActivityAt = Date.now();
 
       socket.roomCode =
         code;
+      socket.playerToken =
+        playerToken;
 
 
       io.to(code).emit(
@@ -321,6 +353,97 @@ io.on("connection", (socket) => {
         code
       );
 
+    }
+  );
+
+
+  // ------------------------------------------------
+  // REANUDAR PARTIDA TRAS CAMBIO DE PÁGINA
+  // ------------------------------------------------
+
+  socket.on(
+    "resumeRoom",
+    (data = {}) => {
+      const roomCode = String(data?.roomCode || "").trim().toUpperCase();
+      const playerToken = String(data?.playerToken || "").trim();
+      const room = rooms.get(roomCode);
+
+      if (!room || !playerToken) {
+        socket.emit("roomError", "No se puede reanudar la partida.");
+        return;
+      }
+
+      const previousSocketId = room.playerTokens[playerToken];
+
+      if (previousSocketId && previousSocketId !== socket.id) {
+        room.players = room.players.filter((id) => id !== previousSocketId);
+      }
+
+      if (!room.players.includes(socket.id)) {
+        if (room.players.length >= MAX_PLAYERS) {
+          socket.emit("roomError", "La sala está llena.");
+          return;
+        }
+        room.players.push(socket.id);
+      }
+
+      room.playerTokens[playerToken] = socket.id;
+      room.lastActivityAt = Date.now();
+      socket.roomCode = roomCode;
+      socket.playerToken = playerToken;
+      socket.join(roomCode);
+
+      broadcastRoomState(roomCode);
+
+      console.log(
+        "Partida reanudada:",
+        roomCode,
+        "Nivel:",
+        room.currentLevel,
+        "Jugador:",
+        socket.id
+      );
+    }
+  );
+
+
+  // ------------------------------------------------
+  // CONTINUAR AL SIGUIENTE NIVEL
+  // ------------------------------------------------
+
+  socket.on(
+    "continueLevel",
+    (data = {}) => {
+      const roomCode = socket.roomCode;
+      const room = rooms.get(roomCode);
+      const targetLevel = Number(data?.targetLevel);
+
+      if (!room || !Number.isInteger(targetLevel)) return;
+      if (targetLevel !== room.currentLevel + 1) return;
+      if (!room.completedLevels.includes(room.currentLevel)) return;
+      if (room.status !== "victory") return;
+
+      room.currentLevel = targetLevel;
+      room.status = "playing";
+      room.currentPuzzle = 1;
+      room.questionPool = createQuestionPool();
+      room.currentQuestion = room.questionPool.shift();
+      room.currentQuestionResolved = false;
+      room.puzzlesSolved = 0;
+      room.failCount = 0;
+      room.timeRemaining = GAME_DURATION;
+      room.bonusActive = false;
+      room.bonusRemaining = 0;
+      room.lastActivityAt = Date.now();
+
+      broadcastRoomState(roomCode);
+
+      console.log(
+        "Nuevo nivel iniciado:",
+        roomCode,
+        "Nivel:",
+        room.currentLevel
+      );
     }
   );
 
@@ -492,6 +615,8 @@ io.on("connection", (socket) => {
      * No registrar dos veces
      * el mismo acertijo.
      */
+    room.lastActivityAt = Date.now();
+
     if (
       room.currentQuestionResolved
     ) {
@@ -541,6 +666,12 @@ io.on("connection", (socket) => {
 
       room.status =
         "victory";
+
+      if (!room.completedLevels.includes(room.currentLevel)) {
+        room.completedLevels.push(room.currentLevel);
+      }
+
+      room.lastActivityAt = Date.now();
 
       room.bonusActive =
         false;
@@ -802,61 +933,26 @@ room.failCount +=
   socket.on(
     "disconnect",
     () => {
+      const roomCode = socket.roomCode;
+      if (!roomCode) return;
 
-      const roomCode =
-        socket.roomCode;
+      const room = rooms.get(roomCode);
+      if (!room) return;
 
-
-      if (!roomCode) {
-        return;
-      }
-
-
-      const room =
-        rooms.get(roomCode);
-
-
-      if (!room) {
-        return;
-      }
-
-
-      room.players =
-        room.players.filter(
-          (id) =>
-            id !== socket.id
-        );
-
-
-      if (
-        room.players.length === 0
-      ) {
-
-        rooms.delete(
-          roomCode
-        );
-
-
-        console.log(
-          "Sala eliminada:",
-          roomCode
-        );
-
-
-        return;
-      }
-
-
-      broadcastRoomState(
-        roomCode
+      room.players = room.players.filter(
+        (id) => id !== socket.id
       );
 
+      room.lastActivityAt = Date.now();
+
+      broadcastRoomState(roomCode);
 
       console.log(
-        "Jugador desconectado:",
-        socket.id
+        "Jugador desconectado, sala conservada:",
+        socket.id,
+        "Sala:",
+        roomCode
       );
-
     }
   );
 
@@ -874,6 +970,15 @@ setInterval(
       const [roomCode, room]
       of rooms
     ) {
+
+      if (
+        room.players.length === 0 &&
+        Date.now() - room.lastActivityAt > ROOM_IDLE_TIMEOUT
+      ) {
+        rooms.delete(roomCode);
+        console.log("Sala caducada:", roomCode);
+        continue;
+      }
 
       if (
         room.status !==
