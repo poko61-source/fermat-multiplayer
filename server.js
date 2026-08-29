@@ -927,7 +927,10 @@ socket.on(
             room.puzzlesSolved,
       
           totalPuzzles:
-            room.totalPuzzles
+            room.totalPuzzles,
+
+          hostToken:
+            room.hostToken
         }
       );
 
