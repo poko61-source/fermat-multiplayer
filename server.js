@@ -91,6 +91,7 @@ function createGameState() {
     playerTokens: {},
     hostToken: null,
     score: 0,
+    navigationPhase: "game",
     lastActivityAt: Date.now(),
     questionPool: [],
     failCount: 0,
@@ -142,7 +143,10 @@ function getRoomState(room) {
       room.hostToken,
 
     score:
-      room.score
+      room.score,
+
+    navigationPhase:
+      room.navigationPhase
   };
 }
 
@@ -543,13 +547,57 @@ io.on("connection", (socket) => {
         !room ||
         socket.playerToken !==
           room.hostToken ||
-        room.status !== "victory"
+        room.status !==
+          "victory"
       ) {
         return;
       }
 
-      io.to(roomCode).emit(
-        "navigateToMain"
+      room.navigationPhase =
+        "main";
+
+      room.lastActivityAt =
+        Date.now();
+
+      let attempts = 0;
+
+      const broadcastNavigation = () => {
+
+        const currentRoom =
+          rooms.get(roomCode);
+
+        if (!currentRoom) {
+          return;
+        }
+
+        attempts += 1;
+
+        broadcastRoomState(
+          roomCode
+        );
+
+        io.to(roomCode).emit(
+          "navigateToMain"
+        );
+
+        if (
+          attempts < 12 &&
+          currentRoom.navigationPhase ===
+            "main"
+        ) {
+          setTimeout(
+            broadcastNavigation,
+            500
+          );
+        }
+
+      };
+
+      broadcastNavigation();
+
+      console.log(
+        "HOST: navegación a principal para toda la sala:",
+        roomCode
       );
     }
   );
@@ -578,19 +626,63 @@ io.on("connection", (socket) => {
         !room ||
         socket.playerToken !==
           room.hostToken ||
-        room.status !== "victory" ||
+        room.status !==
+          "victory" ||
         targetLevel !==
           (room.currentLevel || 1) + 1
       ) {
         return;
       }
 
-      io.to(roomCode).emit(
-        "navigateToLevel",
-        {
-          level:
-            targetLevel
+      room.navigationPhase =
+        "level";
+
+      room.lastActivityAt =
+        Date.now();
+
+      let attempts = 0;
+
+      const broadcastNavigation = () => {
+
+        const currentRoom =
+          rooms.get(roomCode);
+
+        if (!currentRoom) {
+          return;
         }
+
+        attempts += 1;
+
+        broadcastRoomState(
+          roomCode
+        );
+
+        io.to(roomCode).emit(
+          "navigateToLevel",
+          {
+            level:
+              targetLevel
+          }
+        );
+
+        if (
+          attempts < 12 &&
+          currentRoom.navigationPhase ===
+            "level"
+        ) {
+          setTimeout(
+            broadcastNavigation,
+            500
+          );
+        }
+      };
+
+      broadcastNavigation();
+
+      console.log(
+        "HOST: Nivel seleccionado para toda la sala:",
+        roomCode,
+        targetLevel
       );
     }
   );
