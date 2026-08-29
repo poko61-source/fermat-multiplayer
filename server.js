@@ -18,6 +18,7 @@ const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
 const PUZZLE_BONUS = 30;
+const ROOM_IDLE_TIMEOUT = 15 * 60 * 1000;
 
 // --------------------------------------------------
 // PÁGINAS
@@ -76,6 +77,8 @@ function createQuestionPool() {
 function createGameState() {
   return {
     status: "waiting",
+    currentLevel: 1,
+    completedLevels: [],
     currentPuzzle: 0,
     puzzlesSolved: 0,
     totalPuzzles: TOTAL_PUZZLES,
@@ -86,9 +89,9 @@ function createGameState() {
 
     players: [],
     playerTokens: {},
+    lastActivityAt: Date.now(),
     questionPool: [],
     failCount: 0,
-
     completedLevels: [],
     nextLevelPlayerTokens: [],
     nextLevelReady: {}
@@ -103,12 +106,8 @@ function createGameState() {
 function getRoomState(room) {
   return {
     status: room.status,
-
-    currentLevel:
-      room.currentLevel || 1,
-
-    completedLevels:
-      room.completedLevels || [],
+    currentLevel: room.currentLevel,
+    completedLevels: room.completedLevels,
 
     currentPuzzle:
       room.currentPuzzle,
@@ -177,7 +176,7 @@ io.on("connection", (socket) => {
 
   socket.on(
     "createRoom",
-    () => {
+    (data = {}) => {
 
       let roomCode;
 
@@ -198,23 +197,14 @@ io.on("connection", (socket) => {
         createGameState();
 
       const playerToken =
-        String(
-          data?.playerToken || ""
-        ).trim();
+        String(data?.playerToken || "").trim();
 
       if (!playerToken) {
-        socket.emit(
-          "roomError",
-          "Identidad de jugador no válida."
-        );
+        socket.emit("roomError", "Identidad de jugador no válida.");
         return;
       }
 
-      room.playerTokens =
-        room.playerTokens || {};
-
-      room.playerTokens[playerToken] =
-        socket.id;
+      room.playerTokens[playerToken] = socket.id;
 
 
       rooms.set(
@@ -232,10 +222,10 @@ io.on("connection", (socket) => {
         socket.id
       );
 
+      room.lastActivityAt = Date.now();
 
       socket.roomCode =
         roomCode;
-
       socket.playerToken =
         playerToken;
 
@@ -271,22 +261,15 @@ io.on("connection", (socket) => {
     (data = {}) => {
 
       const code =
-        String(
-          data?.roomCode || data || ""
-        )
+        String(data?.roomCode || data || "")
           .trim()
           .toUpperCase();
 
       const playerToken =
-        String(
-          data?.playerToken || ""
-        ).trim();
+        String(data?.playerToken || "").trim();
 
       if (!playerToken) {
-        socket.emit(
-          "roomError",
-          "Identidad de jugador no válida."
-        );
+        socket.emit("roomError", "Identidad de jugador no válida.");
         return;
       }
 
@@ -343,16 +326,11 @@ io.on("connection", (socket) => {
         socket.id
       );
 
-      room.playerTokens =
-        room.playerTokens || {};
-
-      room.playerTokens[playerToken] =
-        socket.id;
-
+      room.playerTokens[playerToken] = socket.id;
+      room.lastActivityAt = Date.now();
 
       socket.roomCode =
         code;
-
       socket.playerToken =
         playerToken;
 
@@ -389,147 +367,36 @@ io.on("connection", (socket) => {
   socket.on(
     "resumeRoom",
     (data = {}) => {
-
-      const roomCode =
-        String(
-          data?.roomCode || ""
-        )
-          .trim()
-          .toUpperCase();
-
-      const playerToken =
-        String(
-          data?.playerToken || ""
-        ).trim();
-
-      const targetLevel =
-        Number(
-          data?.targetLevel
-        );
-
-      const room =
-        rooms.get(roomCode);
+      const roomCode = String(data?.roomCode || "").trim().toUpperCase();
+      const playerToken = String(data?.playerToken || "").trim();
+      const room = rooms.get(roomCode);
 
       if (!room || !playerToken) {
-        socket.emit(
-          "roomError",
-          "No se puede reanudar la partida."
-        );
+        socket.emit("roomError", "No se puede reanudar la partida.");
         return;
       }
 
-      room.playerTokens =
-        room.playerTokens || {};
+      const previousSocketId = room.playerTokens[playerToken];
 
-      const previousSocketId =
-        room.playerTokens[playerToken];
-
-      if (
-        previousSocketId &&
-        previousSocketId !== socket.id
-      ) {
-        room.players =
-          room.players.filter(
-            id =>
-              id !== previousSocketId
-          );
+      if (previousSocketId && previousSocketId !== socket.id) {
+        room.players = room.players.filter((id) => id !== previousSocketId);
       }
 
-      if (
-        !room.players.includes(
-          socket.id
-        )
-      ) {
-        if (
-          room.players.length >=
-          MAX_PLAYERS
-        ) {
-          socket.emit(
-            "roomError",
-            "La sala está llena."
-          );
+      if (!room.players.includes(socket.id)) {
+        if (room.players.length >= MAX_PLAYERS) {
+          socket.emit("roomError", "La sala está llena.");
           return;
         }
-
-        room.players.push(
-          socket.id
-        );
+        room.players.push(socket.id);
       }
 
-      room.playerTokens[playerToken] =
-        socket.id;
+      room.playerTokens[playerToken] = socket.id;
+      room.lastActivityAt = Date.now();
+      socket.roomCode = roomCode;
+      socket.playerToken = playerToken;
+      socket.join(roomCode);
 
-      socket.roomCode =
-        roomCode;
-
-      socket.playerToken =
-        playerToken;
-
-      socket.join(
-        roomCode
-      );
-
-      room.lastActivityAt =
-        Date.now();
-
-      if (
-        room.status === "victory" &&
-        Number.isInteger(targetLevel) &&
-        targetLevel ===
-          (room.currentLevel || 1) + 1
-      ) {
-
-        room.nextLevelPlayerTokens =
-          Array.isArray(
-            room.nextLevelPlayerTokens
-          )
-            ? room.nextLevelPlayerTokens
-            : Object.keys(
-                room.playerTokens
-              );
-
-        room.nextLevelReady =
-          room.nextLevelReady ||
-          {};
-
-        if (
-          room.nextLevelPlayerTokens.includes(
-            playerToken
-          )
-        ) {
-          room.nextLevelReady[
-            playerToken
-          ] = true;
-        }
-
-        console.log(
-          "Jugador listo para siguiente nivel:",
-          roomCode,
-          playerToken,
-          "Listos:",
-          Object.keys(
-            room.nextLevelReady
-          ).filter(
-            token =>
-              room.nextLevelReady[token] === true
-          ).length,
-          "/",
-          room.nextLevelPlayerTokens.length
-        );
-      }
-
-      socket.emit(
-        "roomState",
-        getRoomState(room)
-      );
-
-      broadcastRoomState(
-        roomCode
-      );
-
-      startNextLevelIfReady(
-        roomCode
-      );
+      broadcastRoomState(roomCode);
 
       console.log(
         "Partida reanudada:",
@@ -550,130 +417,252 @@ io.on("connection", (socket) => {
   socket.on(
     "continueLevel",
     (data = {}) => {
+      const roomCode = socket.roomCode;
+      const room = rooms.get(roomCode);
+      const targetLevel = Number(data?.targetLevel);
+
+      if (!room || !Number.isInteger(targetLevel)) return;
+      if (targetLevel !== room.currentLevel + 1) return;
+      if (!room.completedLevels.includes(room.currentLevel)) return;
+      if (room.status !== "victory") return;
+
+      room.currentLevel = targetLevel;
+      room.status = "playing";
+      room.currentPuzzle = 1;
+      room.questionPool = createQuestionPool();
+      room.currentQuestion = room.questionPool.shift();
+      room.currentQuestionResolved = false;
+      room.puzzlesSolved = 0;
+      room.failCount = 0;
+      room.timeRemaining = GAME_DURATION;
+      room.bonusActive = false;
+      room.bonusRemaining = 0;
+      room.lastActivityAt = Date.now();
+
+      broadcastRoomState(roomCode);
 
       console.log(
-        "Continuación solicitada:",
-        socket.roomCode,
+        "Nuevo nivel iniciado:",
+        roomCode,
         "Nivel:",
-        Number(data?.targetLevel),
-        "Jugador:",
-        socket.id
+        room.currentLevel
       );
-
-      // No se inicia el nivel aquí.
-      // El inicio real ocurre cuando vuelven los jugadores
-      // mediante resumeRoom().
     }
   );
 
 
   // ------------------------------------------------
-  // TRANSICIÓN SINCRONIZADA AL SIGUIENTE NIVEL
   // ------------------------------------------------
+// REANUDAR PARTIDA TRAS CAMBIO DE PÁGINA
+// ------------------------------------------------
 
-  function startNextLevelIfReady(roomCode) {
+socket.on(
+  "resumeRoom",
+  (data = {}) => {
+
+    const roomCode =
+      String(data?.roomCode || "")
+        .trim()
+        .toUpperCase();
+
+    const playerToken =
+      String(data?.playerToken || "")
+        .trim();
+
+    const targetLevel =
+      Number(data?.targetLevel);
 
     const room =
       rooms.get(roomCode);
 
+    if (!room || !playerToken) {
+      socket.emit(
+        "roomError",
+        "No se puede reanudar la partida."
+      );
+      return;
+    }
+
+    room.playerTokens =
+      room.playerTokens || {};
+
+    const previousSocketId =
+      room.playerTokens[playerToken];
+
     if (
-      !room ||
-      room.status !==
-      "victory"
+      previousSocketId &&
+      previousSocketId !== socket.id
     ) {
-      return;
+      room.players =
+        room.players.filter(
+          id => id !== previousSocketId
+        );
     }
 
-    const expected =
-      Array.isArray(
-        room.nextLevelPlayerTokens
-      )
-        ? room.nextLevelPlayerTokens.filter(Boolean)
-        : [];
+    if (!room.players.includes(socket.id)) {
+      if (room.players.length >= MAX_PLAYERS) {
+        socket.emit(
+          "roomError",
+          "La sala está llena."
+        );
+        return;
+      }
 
-    if (!expected.length) {
-      return;
+      room.players.push(socket.id);
     }
 
-    const ready =
-      room.nextLevelReady ||
-      {};
+    room.playerTokens[playerToken] =
+      socket.id;
 
-    const allReady =
-      expected.every(
-        token =>
-          ready[token] === true
-      );
+    socket.roomCode =
+      roomCode;
 
-    if (!allReady) {
-      broadcastRoomState(
-        roomCode
-      );
-      return;
-    }
+    socket.playerToken =
+      playerToken;
 
-    room.currentLevel =
-      (room.currentLevel || 1) + 1;
-
-    room.status =
-      "playing";
-
-    room.currentPuzzle =
-      1;
-
-    room.questionPool =
-      createQuestionPool();
-
-    room.currentQuestion =
-      room.questionPool.shift();
-
-    room.currentQuestionResolved =
-      false;
-
-    room.puzzlesSolved =
-      0;
-
-    room.failCount =
-      0;
-
-    room.questionStartedAt =
-      Date.now();
-
-    room.timeRemaining =
-      GAME_DURATION;
-
-    room.bonusActive =
-      false;
-
-    room.bonusRemaining =
-      0;
+    socket.join(roomCode);
 
     room.lastActivityAt =
       Date.now();
 
-    room.nextLevelPlayerTokens =
-      [];
+    if (
+      room.status === "victory" &&
+      Number.isInteger(targetLevel) &&
+      targetLevel ===
+        (room.currentLevel || 1) + 1
+    ) {
 
-    room.nextLevelReady =
-      {};
+      room.nextLevelReady =
+        room.nextLevelReady || {};
 
-    broadcastRoomState(
-      roomCode
+      if (
+        !Array.isArray(room.nextLevelPlayerTokens) ||
+        room.nextLevelPlayerTokens.length === 0
+      ) {
+        room.nextLevelPlayerTokens =
+          Object.keys(room.playerTokens);
+      }
+
+      if (
+        room.nextLevelPlayerTokens.includes(
+          playerToken
+        )
+      ) {
+        room.nextLevelReady[playerToken] =
+          true;
+      }
+
+      console.log(
+        "Jugador listo para siguiente nivel:",
+        roomCode,
+        playerToken
+      );
+    }
+
+    socket.emit(
+      "roomState",
+      getRoomState(room)
     );
 
+    broadcastRoomState(roomCode);
+
+    startNextLevelIfReady(roomCode);
+
     console.log(
-      "NIVEL INICIADO PARA TODA LA SALA:",
+      "Partida reanudada:",
       roomCode,
       "Nivel:",
       room.currentLevel,
-      "Acertijo:",
-      room.currentQuestion
+      "Jugador:",
+      socket.id
     );
   }
+);
 
 
-  // ------------------------------------------------
-  // INICIAR PARTIDA
+// ------------------------------------------------
+// CONTINUAR AL SIGUIENTE NIVEL
+// ------------------------------------------------
+
+socket.on(
+  "continueLevel",
+  (data = {}) => {
+    // Compatibilidad con el Nivel 1:
+    // esta señal ya NO inicia el siguiente nivel.
+    console.log(
+      "Continuación solicitada:",
+      socket.roomCode,
+      "Nivel:",
+      Number(data?.targetLevel)
+    );
+  }
+);
+
+
+// ------------------------------------------------
+// TRANSICIÓN SINCRONIZADA AL SIGUIENTE NIVEL
+// ------------------------------------------------
+
+function startNextLevelIfReady(roomCode) {
+  const room = rooms.get(roomCode);
+
+  if (!room || room.status !== "victory") {
+    return;
+  }
+
+  const expected =
+    Array.isArray(room.nextLevelPlayerTokens)
+      ? room.nextLevelPlayerTokens
+      : [];
+
+  if (!expected.length) {
+    return;
+  }
+
+  const ready =
+    room.nextLevelReady || {};
+
+  if (!expected.every(
+    token => ready[token] === true
+  )) {
+    return;
+  }
+
+  room.currentLevel =
+    (room.currentLevel || 1) + 1;
+
+  room.status = "playing";
+  room.currentPuzzle = 1;
+  room.questionPool = createQuestionPool();
+  room.currentQuestion =
+    room.questionPool.shift();
+
+  room.currentQuestionResolved = false;
+  room.puzzlesSolved = 0;
+  room.failCount = 0;
+  room.questionStartedAt = Date.now();
+  room.timeRemaining = GAME_DURATION;
+  room.bonusActive = false;
+  room.bonusRemaining = 0;
+  room.lastActivityAt = Date.now();
+
+  room.nextLevelPlayerTokens = [];
+  room.nextLevelReady = {};
+
+  broadcastRoomState(roomCode);
+
+  console.log(
+    "NIVEL INICIADO PARA TODA LA SALA:",
+    roomCode,
+    "Nivel:",
+    room.currentLevel,
+    "Acertijo:",
+    room.currentQuestion
+  );
+}
+
+
+// INICIAR PARTIDA
   // ------------------------------------------------
 
   socket.on(
@@ -839,6 +828,8 @@ io.on("connection", (socket) => {
      * No registrar dos veces
      * el mismo acertijo.
      */
+    room.lastActivityAt = Date.now();
+
     if (
       room.currentQuestionResolved
     ) {
@@ -890,9 +881,7 @@ io.on("connection", (socket) => {
         "victory";
 
       room.completedLevels =
-        Array.isArray(
-          room.completedLevels
-        )
+        Array.isArray(room.completedLevels)
           ? room.completedLevels
           : [];
 
@@ -920,6 +909,12 @@ io.on("connection", (socket) => {
       room.nextLevelReady =
         {};
 
+
+      if (!room.completedLevels.includes(room.currentLevel)) {
+        room.completedLevels.push(room.currentLevel);
+      }
+
+      room.lastActivityAt = Date.now();
 
       room.bonusActive =
         false;
@@ -1181,83 +1176,26 @@ room.failCount +=
   socket.on(
     "disconnect",
     () => {
+      const roomCode = socket.roomCode;
+      if (!roomCode) return;
 
-      const roomCode =
-        socket.roomCode;
+      const room = rooms.get(roomCode);
+      if (!room) return;
 
-
-      if (!roomCode) {
-        return;
-      }
-
-
-      const room =
-        rooms.get(roomCode);
-
-
-      if (!room) {
-        return;
-      }
-
-
-      room.players =
-        room.players.filter(
-          (id) =>
-            id !== socket.id
-        );
-
-
-      if (
-        room.players.length === 0
-      ) {
-
-        const waitingForNextLevel =
-          room.status === "victory" &&
-          Array.isArray(
-            room.nextLevelPlayerTokens
-          ) &&
-          room.nextLevelPlayerTokens.length > 0;
-
-        if (
-          waitingForNextLevel
-        ) {
-          room.lastActivityAt =
-            Date.now();
-
-          broadcastRoomState(
-            roomCode
-          );
-
-          console.log(
-            "Sala conservada durante transición:",
-            roomCode
-          );
-
-          return;
-        }
-
-        rooms.delete(
-          roomCode
-        );
-
-        console.log(
-          "Sala eliminada:",
-          roomCode
-        );
-
-        return;
-      }
-
-      broadcastRoomState(
-        roomCode
+      room.players = room.players.filter(
+        (id) => id !== socket.id
       );
 
+      room.lastActivityAt = Date.now();
+
+      broadcastRoomState(roomCode);
 
       console.log(
-        "Jugador desconectado:",
-        socket.id
+        "Jugador desconectado, sala conservada:",
+        socket.id,
+        "Sala:",
+        roomCode
       );
-
     }
   );
 
@@ -1275,6 +1213,15 @@ setInterval(
       const [roomCode, room]
       of rooms
     ) {
+
+      if (
+        room.players.length === 0 &&
+        Date.now() - room.lastActivityAt > ROOM_IDLE_TIMEOUT
+      ) {
+        rooms.delete(roomCode);
+        console.log("Sala caducada:", roomCode);
+        continue;
+      }
 
       if (
         room.status !==
