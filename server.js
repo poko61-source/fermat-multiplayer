@@ -299,9 +299,7 @@ io.on("connection", (socket) => {
       socket.emit(
         "roomCreated",
         {
-          roomCode,
-          hostToken:
-            room.hostToken
+          roomCode
         }
       );
 
