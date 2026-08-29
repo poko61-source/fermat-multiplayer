@@ -167,6 +167,12 @@ function startNextLevelIfReady(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
 
+  // Compatibilidad con salas creadas antes de este cambio.
+  if (!Array.isArray(room.nextLevelPlayerTokens)) room.nextLevelPlayerTokens = [];
+  if (!room.nextLevelReady || typeof room.nextLevelReady !== "object") {
+    room.nextLevelReady = {};
+  }
+
   // Solo avanzamos desde una pantalla de victoria y una sola vez.
   if (room.status !== "victory") return;
 
