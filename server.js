@@ -511,23 +511,13 @@ io.on("connection", (socket) => {
       if (!room.completedLevels.includes(room.currentLevel)) return;
       if (room.status !== "victory") return;
 
-      // Compatibilidad con clientes antiguos: continueLevel significa
-      // "estoy listo", nunca "empieza el nivel tú solo".
-      if (!Array.isArray(room.nextLevelPlayerTokens) ||
-          room.nextLevelPlayerTokens.length === 0) {
-        room.nextLevelPlayerTokens = Object.keys(room.playerTokens);
-      }
-
-      if (socket.playerToken) {
-        room.nextLevelReady[socket.playerToken] = true;
-      }
-
-      room.lastActivityAt = Date.now();
-      broadcastRoomState(roomCode);
-      startNextLevelIfReady(roomCode);
-
+      // IMPORTANTE:
+      // continueLevel ya no cambia el estado de la sala ni marca
+      // al jugador como preparado para el siguiente nivel.
+      // La única señal válida para ello es resumeRoom(), enviada
+      // por el game.js del siguiente nivel cuando el jugador ha entrado.
       console.log(
-        "Jugador confirma continuación:",
+        "Transición pendiente: jugador aún no ha entrado al siguiente nivel:",
         roomCode,
         "Nivel solicitado:",
         targetLevel,
