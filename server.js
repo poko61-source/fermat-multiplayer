@@ -429,59 +429,119 @@ io.on("connection", (socket) => {
   socket.on(
     "resumeRoom",
     (data = {}) => {
-      const roomCode = String(data?.roomCode || "").trim().toUpperCase();
-      const playerToken = String(data?.playerToken || "").trim();
-      const room = rooms.get(roomCode);
+      const roomCode =
+        String(data?.roomCode || "")
+          .trim()
+          .toUpperCase();
+
+      const playerToken =
+        String(data?.playerToken || "")
+          .trim();
+
+      const room =
+        rooms.get(roomCode);
 
       if (!room || !playerToken) {
-        socket.emit("roomError", "No se puede reanudar la partida.");
+        socket.emit(
+          "roomError",
+          "No se puede reanudar la partida."
+        );
         return;
       }
 
-      const previousSocketId = room.playerTokens[playerToken];
+      /*
+       * playerToken es la identidad persistente del jugador.
+       * Al cambiar de página cambia socket.id, por lo que sustituimos
+       * únicamente la conexión anterior de ESTE jugador.
+       */
+      const previousSocketId =
+        room.playerTokens[playerToken];
 
-      if (previousSocketId && previousSocketId !== socket.id) {
-        room.players = room.players.filter((id) => id !== previousSocketId);
+      if (
+        previousSocketId &&
+        previousSocketId !== socket.id
+      ) {
+        room.players =
+          room.players.filter(
+            id => id !== previousSocketId
+          );
       }
 
       if (!room.players.includes(socket.id)) {
-        if (room.players.length >= MAX_PLAYERS) {
-          socket.emit("roomError", "La sala está llena.");
-          return;
-        }
         room.players.push(socket.id);
       }
 
-      room.playerTokens[playerToken] = socket.id;
-      room.lastActivityAt = Date.now();
-      socket.roomCode = roomCode;
-      socket.playerToken = playerToken;
+      room.playerTokens[playerToken] =
+        socket.id;
+
+      socket.roomCode =
+        roomCode;
+
+      socket.playerToken =
+        playerToken;
+
       socket.join(roomCode);
 
-      // Si este jugador está entrando al nivel siguiente, queda marcado
-      // como listo. El servidor solo abrirá el nuevo nivel cuando TODOS
-      // los jugadores que terminaron el nivel anterior hayan reaparecido.
-      const targetLevel = Number(data?.targetLevel);
-      if (
-        room.status === "victory" &&
-        Number.isInteger(targetLevel) &&
-        targetLevel === room.currentLevel + 1
-      ) {
-        if (!Array.isArray(room.nextLevelPlayerTokens) ||
-            room.nextLevelPlayerTokens.length === 0) {
-          room.nextLevelPlayerTokens = Object.keys(room.playerTokens);
-        }
+      room.lastActivityAt =
+        Date.now();
 
-        room.nextLevelReady[playerToken] = true;
-        console.log(
-          "Jugador listo para siguiente nivel:",
-          roomCode,
-          playerToken
-        );
+      /*
+       * Solo resumeRoom marca al jugador como preparado para el
+       * siguiente nivel. La lista de jugadores esperados se conserva
+       * mediante playerToken, no mediante socket.id.
+       */
+      if (room.status === "victory") {
+        const targetLevel =
+          Number(data?.targetLevel);
+
+        if (
+          Number.isInteger(targetLevel) &&
+          targetLevel === room.currentLevel + 1
+        ) {
+          if (
+            !Array.isArray(room.nextLevelPlayerTokens) ||
+            room.nextLevelPlayerTokens.length === 0
+          ) {
+            room.nextLevelPlayerTokens =
+              Object.keys(room.playerTokens);
+          }
+
+          room.nextLevelReady =
+            room.nextLevelReady || {};
+
+          room.nextLevelReady[playerToken] =
+            true;
+
+          console.log(
+            "Jugador listo para siguiente nivel:",
+            roomCode,
+            playerToken,
+            "Listos:",
+            Object.keys(room.nextLevelReady).filter(
+              token =>
+                room.nextLevelReady[token] === true
+            ).length,
+            "/",
+            room.nextLevelPlayerTokens.length
+          );
+        }
       }
 
-      broadcastRoomState(roomCode);
-      startNextLevelIfReady(roomCode);
+      /*
+       * El jugador recibe inmediatamente el estado actual.
+       */
+      socket.emit(
+        "roomState",
+        getRoomState(room)
+      );
+
+      broadcastRoomState(
+        roomCode
+      );
+
+      startNextLevelIfReady(
+        roomCode
+      );
 
       console.log(
         "Partida reanudada:",
@@ -489,7 +549,9 @@ io.on("connection", (socket) => {
         "Nivel:",
         room.currentLevel,
         "Jugador:",
-        socket.id
+        socket.id,
+        "Token:",
+        playerToken
       );
     }
   );
@@ -511,13 +573,23 @@ io.on("connection", (socket) => {
       if (!room.completedLevels.includes(room.currentLevel)) return;
       if (room.status !== "victory") return;
 
-      // IMPORTANTE:
-      // continueLevel ya no cambia el estado de la sala ni marca
-      // al jugador como preparado para el siguiente nivel.
-      // La única señal válida para ello es resumeRoom(), enviada
-      // por el game.js del siguiente nivel cuando el jugador ha entrado.
+      // Compatibilidad con clientes antiguos: continueLevel significa
+      // "estoy listo", nunca "empieza el nivel tú solo".
+      if (!Array.isArray(room.nextLevelPlayerTokens) ||
+          room.nextLevelPlayerTokens.length === 0) {
+        room.nextLevelPlayerTokens = Object.keys(room.playerTokens);
+      }
+
+      if (socket.playerToken) {
+        room.nextLevelReady[socket.playerToken] = true;
+      }
+
+      room.lastActivityAt = Date.now();
+      broadcastRoomState(roomCode);
+      startNextLevelIfReady(roomCode);
+
       console.log(
-        "Transición pendiente: jugador aún no ha entrado al siguiente nivel:",
+        "Jugador confirma continuación:",
         roomCode,
         "Nivel solicitado:",
         targetLevel,
@@ -754,9 +826,11 @@ io.on("connection", (socket) => {
       // Guardamos exactamente quiénes terminaron el nivel.
       // La transición no se abrirá hasta que esos mismos jugadores
       // hayan vuelto a conectarse en el siguiente nivel.
-      room.nextLevelPlayerTokens = room.players
-        .map(id => io.sockets.sockets.get(id)?.playerToken)
-        .filter(Boolean);
+      room.nextLevelPlayerTokens =
+        Object.keys(
+          room.playerTokens
+        );
+
       room.nextLevelReady = {};
 
       room.lastActivityAt = Date.now();
