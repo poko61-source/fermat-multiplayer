@@ -671,6 +671,9 @@ socket.on(
           data?.playerToken || ""
         ).trim();
 
+      const isHostHint =
+        data?.isHost === true;
+
       const room =
         rooms.get(roomCode);
 
@@ -681,16 +684,69 @@ socket.on(
         return;
       }
 
-      /*
-       * No expulsamos nunca a otro socket que ya esté usando
-       * este token. Si dos navegadores llegan con la misma
-       * identidad antigua, el servidor genera una nueva para
-       * el segundo.
-       */
       const existingSocketId =
         room.playerTokens[playerToken];
 
+      /*
+       * Si el token es el del anfitrión, ese token conserva
+       * siempre el papel de anfitrión. Solo un navegador que
+       * afirme ser invitado con ese token recibe uno nuevo.
+       */
       if (
+        playerToken ===
+        room.hostToken
+      ) {
+
+        if (
+          isHostHint
+        ) {
+
+          if (
+            existingSocketId &&
+            existingSocketId !==
+              socket.id
+          ) {
+
+            room.players =
+              room.players.filter(
+                id =>
+                  id !==
+                  existingSocketId
+              );
+          }
+
+          room.hostSocketId =
+            socket.id;
+
+        } else if (
+          existingSocketId &&
+          existingSocketId !==
+            socket.id
+        ) {
+
+          playerToken =
+            createPlayerToken();
+
+          while (
+            room.playerTokens[playerToken]
+          ) {
+            playerToken =
+              createPlayerToken();
+          }
+
+          socket.emit(
+            "playerTokenReassigned",
+            {
+              playerToken,
+              hostToken:
+                room.hostToken,
+              isHost:
+                false
+            }
+          );
+        }
+
+      } else if (
         existingSocketId &&
         existingSocketId !==
           socket.id
@@ -711,7 +767,9 @@ socket.on(
           {
             playerToken,
             hostToken:
-              room.hostToken
+              room.hostToken,
+            isHost:
+              false
           }
         );
       }
@@ -765,7 +823,7 @@ socket.on(
             room
           ),
           isHost:
-            socket.playerToken ===
+            playerToken ===
               room.hostToken
         }
       );
@@ -775,7 +833,6 @@ socket.on(
       );
     }
   );
-
 
 
   socket.on(
