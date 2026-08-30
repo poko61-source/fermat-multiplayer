@@ -261,6 +261,139 @@ function startNextLevelIfReady(roomCode) {
 }
 
 // --------------------------------------------------
+// INICIAR SIGUIENTE NIVEL DIRECTAMENTE EN MULTIJUGADOR
+// --------------------------------------------------
+
+function startNextLevelForRoom(
+  roomCode,
+  targetLevel,
+  sourceSocketId
+) {
+
+  const room =
+    rooms.get(
+      roomCode
+    );
+
+  if (
+    !room
+  ) {
+    return false;
+  }
+
+  if (
+    !Number.isInteger(
+      targetLevel
+    ) ||
+    targetLevel !==
+      (room.currentLevel || 1) + 1
+  ) {
+    return false;
+  }
+
+  room.currentLevel =
+    targetLevel;
+
+  room.returningToMain =
+    false;
+
+  room.status =
+    "playing";
+
+  room.currentPuzzle =
+    1;
+
+  room.questionPool =
+    createQuestionPool();
+
+  room.currentQuestion =
+    room.questionPool.shift();
+
+  room.currentQuestionResolved =
+    false;
+
+  room.puzzlesSolved =
+    0;
+
+  room.failCount =
+    0;
+
+  room.timeRemaining =
+    GAME_DURATION;
+
+  room.questionStartedAt =
+    Date.now();
+
+  room.bonusActive =
+    false;
+
+  room.bonusRemaining =
+    0;
+
+  room.finalScore =
+    null;
+
+  room.lastActivityAt =
+    Date.now();
+
+  /*
+   * Guardamos el Nivel 2 como destino de reanudación.
+   * Los navegadores lo usarán al cargar Nivel 2.
+   */
+  room.nextLevelPlayerTokens =
+    room.players
+      .map(
+        id =>
+          io.sockets.sockets.get(
+            id
+          )?.playerToken
+      )
+      .filter(Boolean);
+
+  room.nextLevelReady =
+    {};
+
+  broadcastRoomState(
+    roomCode
+  );
+
+  io.to(
+    roomCode
+  ).emit(
+    "navigateToLevel",
+    {
+      level:
+        targetLevel,
+
+      currentPuzzle:
+        room.currentPuzzle,
+
+      currentQuestion:
+        room.currentQuestion,
+
+      timeRemaining:
+        room.timeRemaining
+    }
+  );
+
+  console.log(
+    "MULTIJUGADOR: salto directo al siguiente nivel",
+    {
+      roomCode,
+      targetLevel,
+      sourceSocketId,
+      currentQuestion:
+        room.currentQuestion,
+      players:
+        room.players.length
+    }
+  );
+
+  return true;
+}
+
+
+// --------------------------------------------------
 // CONEXIONES
 // --------------------------------------------------
 
@@ -610,7 +743,7 @@ io.on("connection", (socket) => {
 
 
   socket.on(
-    "hostSelectLevel",
+    "hostContinueToNextLevel",
     (data = {}) => {
 
       const roomCode =
@@ -644,20 +777,18 @@ io.on("connection", (socket) => {
 
       if (
         !isHost ||
-        !(
-          room.status ===
-            "victory" ||
-          room.returningToMain ===
-            true
-        )
+        room.status !==
+          "victory"
       ) {
+
         socket.emit(
-          "hostSelectLevelError",
+          "hostContinueToNextLevelError",
           {
             message:
               "Solo el anfitrión puede iniciar el siguiente nivel."
           }
         );
+
         return;
       }
 
@@ -666,13 +797,110 @@ io.on("connection", (socket) => {
           data?.targetLevel || 2
         );
 
+      const started =
+        startNextLevelForRoom(
+          roomCode,
+          targetLevel,
+          socket.id
+        );
+
       if (
-        !Number.isInteger(
-          targetLevel
-        ) ||
-        targetLevel !==
-          (room.currentLevel || 1) + 1
+        !started
       ) {
+
+        socket.emit(
+          "hostContinueToNextLevelError",
+          {
+            message:
+              "No se pudo iniciar el siguiente nivel."
+          }
+        );
+
+        return;
+      }
+
+      socket.emit(
+        "hostContinueToNextLevelAccepted",
+        {
+          level:
+            targetLevel
+        }
+      );
+    }
+  );
+
+
+  socket.on(
+    "hostSelectLevel",
+    (data = {}) => {
+
+      const roomCode =
+        socket.roomCode ||
+        String(
+          data?.roomCode || ""
+        ).trim().toUpperCase();
+
+      const playerToken =
+        String(
+          data?.playerToken ||
+          socket.playerToken ||
+          ""
+        ).trim();
+
+      const room =
+        rooms.get(
+          roomCode
+        );
+
+      if (
+        !room ||
+        playerToken !==
+          room.hostToken
+      ) {
+
+        socket.emit(
+          "hostSelectLevelError",
+          {
+            message:
+              "Solo el anfitrión puede iniciar el siguiente nivel."
+          }
+        );
+
+        return;
+      }
+
+      if (
+        room.status !==
+        "victory"
+      ) {
+
+        socket.emit(
+          "hostSelectLevelError",
+          {
+            message:
+              "La sala no está en pantalla final."
+          }
+        );
+
+        return;
+      }
+
+      const targetLevel =
+        Number(
+          data?.targetLevel || 2
+        );
+
+      const started =
+        startNextLevelForRoom(
+          roomCode,
+          targetLevel,
+          socket.id
+        );
+
+      if (
+        !started
+      ) {
+
         socket.emit(
           "hostSelectLevelError",
           {
@@ -680,101 +908,15 @@ io.on("connection", (socket) => {
               "Nivel solicitado no válido."
           }
         );
+
         return;
       }
-
-      /*
-       * INICIAR REALMENTE EL SIGUIENTE NIVEL.
-       * El cambio de página ocurre DESPUÉS de cambiar
-       * el estado de la sala, no antes.
-       */
-      room.currentLevel =
-        targetLevel;
-
-      room.returningToMain =
-        false;
-
-      room.status =
-        "playing";
-
-      room.currentPuzzle =
-        1;
-
-      room.questionPool =
-        createQuestionPool();
-
-      room.currentQuestion =
-        room.questionPool.shift();
-
-      room.currentQuestionResolved =
-        false;
-
-      room.puzzlesSolved =
-        0;
-
-      room.failCount =
-        0;
-
-      room.timeRemaining =
-        GAME_DURATION;
-
-      room.questionStartedAt =
-        Date.now();
-
-      room.bonusActive =
-        false;
-
-      room.bonusRemaining =
-        0;
-
-      room.finalScore =
-        null;
-
-      room.lastActivityAt =
-        Date.now();
-
-      /*
-       * Notificar el nuevo estado antes de navegar.
-       */
-      broadcastRoomState(
-        roomCode
-      );
-
-      io.to(roomCode).emit(
-        "navigateToLevel",
-        {
-          level:
-            targetLevel,
-
-          currentPuzzle:
-            room.currentPuzzle,
-
-          currentQuestion:
-            room.currentQuestion,
-
-          timeRemaining:
-            room.timeRemaining
-        }
-      );
 
       socket.emit(
         "hostSelectLevelAccepted",
         {
           level:
             targetLevel
-        }
-      );
-
-      console.log(
-        "HOST: siguiente nivel iniciado",
-        {
-          roomCode,
-          level:
-            targetLevel,
-          question:
-            room.currentQuestion,
-          players:
-            room.players.length
         }
       );
     }
