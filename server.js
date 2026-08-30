@@ -299,7 +299,9 @@ io.on("connection", (socket) => {
       socket.emit(
         "roomCreated",
         {
-          roomCode
+          roomCode,
+          hostToken:
+            room.hostToken
         }
       );
 
@@ -440,20 +442,23 @@ io.on("connection", (socket) => {
           .trim()
           .toUpperCase();
 
-      const playerToken =
+      const room =
+        rooms.get(roomCode);
+
+      const token =
         String(
           data?.playerToken ||
           socket.playerToken ||
           ""
         ).trim();
 
-      const room =
-        rooms.get(roomCode);
-
       if (
         !room ||
-        playerToken !== room.hostToken ||
-        room.status !== "victory"
+        room.status !== "victory" ||
+        (
+          token !== room.hostToken &&
+          socket.id !== room.players[0]
+        )
       ) {
         return;
       }
@@ -480,8 +485,11 @@ io.on("connection", (socket) => {
 
       if (
         !room ||
-        socket.playerToken !== room.hostToken ||
         room.status !== "victory" ||
+        (
+          socket.playerToken !== room.hostToken &&
+          socket.id !== room.players[0]
+        ) ||
         targetLevel !==
           (room.currentLevel || 1) + 1
       ) {
