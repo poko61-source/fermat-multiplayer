@@ -498,30 +498,9 @@ io.on("connection", (socket) => {
         return;
       }
 
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent +=
-            1;
-
-          io.to(roomCode).emit(
-            "navigateToMain"
-          );
-
-          if (
-            sent < 8
-          ) {
-            setTimeout(
-              notify,
-              500
-            );
-          }
-        };
-
-      notify();
+      io.to(roomCode).emit(
+        "navigateToMain"
+      );
     }
   );
 
@@ -999,7 +978,11 @@ socket.on(
       room.bonusRemaining =
         0;
 
-      room.players.forEach(
+            broadcastRoomState(
+        roomCode
+      );
+
+room.players.forEach(
         playerSocketId => {
 
           io.to(
