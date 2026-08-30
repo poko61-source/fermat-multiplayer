@@ -546,8 +546,12 @@ io.on("connection", (socket) => {
 
       if (
         !room ||
-        playerToken !==
-          room.hostToken
+        !(
+          socket.id ===
+            room.hostSocketId ||
+          playerToken ===
+            room.hostToken
+        )
       ) {
         socket.emit(
           "hostReturnToMainError",
@@ -1394,13 +1398,8 @@ room.players.forEach(
                 room.hostToken,
 
               isHost:
-                (
-                  io.sockets.sockets.get(
-                    playerSocketId
-                  )?.playerToken ||
-                  ""
-                ) ===
-                  room.hostToken
+                playerSocketId ===
+                  room.hostSocketId
             }
           );
         }
