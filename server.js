@@ -18,6 +18,10 @@ const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
 const PUZZLE_BONUS = 30;
+const POINTS_PER_SOLVED = 500;
+const POINTS_PER_FAIL = 50;
+const ESCAPE_BONUS = 500;
+const MAX_TIME_BONUS = 500;
 const ROOM_IDLE_TIMEOUT = 15 * 60 * 1000;
 
 // --------------------------------------------------
@@ -629,6 +633,9 @@ socket.on(
       room.questionStartedAt =
         Date.now();
 
+      room.finalScore =
+        null;
+
       room.lastActivityAt =
         Date.now();
 
@@ -665,9 +672,7 @@ socket.on(
       const roomCode =
         String(
           data?.roomCode || ""
-        )
-          .trim()
-          .toUpperCase();
+        ).trim().toUpperCase();
 
       const playerToken =
         String(
@@ -687,17 +692,18 @@ socket.on(
       }
 
       const oldSocketId =
-        room.playerTokens[playerToken];
+        room.playerTokens[
+          playerToken
+        ];
 
-      /*
-       * Un jugador vuelve a su asiento lógico.
-       */
       if (
         oldSocketId &&
         oldSocketId !==
-          socket.id
+          socket.id &&
+        !io.sockets.sockets.has(
+          oldSocketId
+        )
       ) {
-
         room.players =
           room.players.map(
             id =>
@@ -713,7 +719,6 @@ socket.on(
           socket.id
         )
       ) {
-
         if (
           room.players.length >=
           MAX_PLAYERS
@@ -726,7 +731,9 @@ socket.on(
         );
       }
 
-      room.playerTokens[playerToken] =
+      room.playerTokens[
+        playerToken
+      ] =
         socket.id;
 
       socket.roomCode =
@@ -796,14 +803,18 @@ socket.on(
       }
 
       const oldSocketId =
-        room.playerTokens[playerToken];
+        room.playerTokens[
+          playerToken
+        ];
 
       if (
         oldSocketId &&
         oldSocketId !==
-          socket.id
+          socket.id &&
+        !io.sockets.sockets.has(
+          oldSocketId
+        )
       ) {
-
         room.players =
           room.players.map(
             id =>
@@ -819,7 +830,6 @@ socket.on(
           socket.id
         )
       ) {
-
         if (
           room.players.length >=
           MAX_PLAYERS
@@ -832,7 +842,9 @@ socket.on(
         );
       }
 
-      room.playerTokens[playerToken] =
+      room.playerTokens[
+        playerToken
+      ] =
         socket.id;
 
       socket.roomCode =
@@ -870,14 +882,6 @@ socket.on(
 
       broadcastRoomState(
         roomCode
-      );
-
-      console.log(
-        "Nivel reanudado:",
-        roomCode,
-        room.currentLevel,
-        "jugador:",
-        socket.id
       );
     }
   );
@@ -1119,6 +1123,13 @@ socket.on(
        */
       room.puzzlesSolved += 1;
 
+      room.score =
+        Math.max(
+          0,
+          room.score +
+            POINTS_PER_SOLVED
+        );
+
     console.log(
       "MULTIJUGADOR: ACIERTO REGISTRADO",
       {
@@ -1140,6 +1151,26 @@ socket.on(
 
       room.status =
         "victory";
+
+      room.score =
+        Math.max(
+          0,
+          room.score +
+            ESCAPE_BONUS +
+            Math.round(
+              (
+                Math.max(
+                  0,
+                  room.timeRemaining
+                ) /
+                GAME_DURATION
+              ) *
+              MAX_TIME_BONUS
+            )
+        );
+
+      room.finalScore =
+        room.score;
 
       if (!room.completedLevels.includes(room.currentLevel)) {
         room.completedLevels.push(room.currentLevel);
@@ -1340,6 +1371,13 @@ socket.on(
 room.failCount +=
   1;
 
+    room.score =
+      Math.max(
+        0,
+        room.score -
+          POINTS_PER_FAIL
+      );
+
 
     /*
      * Contar el fallo para toda la sala.
@@ -1460,14 +1498,13 @@ room.failCount +=
         return;
       }
 
+      /*
+       * No borramos el asiento lógico del jugador al cambiar
+       * de página. El siguiente resumeMainRoom/resumeRoom
+       * sustituirá el socket antiguo por el nuevo.
+       */
       room.lastActivityAt =
         Date.now();
-
-      /*
-       * El asiento lógico no se elimina al cambiar de página.
-       * La reconexión por resumeMainRoom/resumeRoom sustituye
-       * el socket antiguo por el nuevo.
-       */
 
       console.log(
         "Jugador desconectado; asiento conservado:",
