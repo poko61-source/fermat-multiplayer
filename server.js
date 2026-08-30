@@ -1131,6 +1131,9 @@ room.players.forEach(
               totalPuzzles:
                 room.totalPuzzles,
 
+              timeRemaining:
+                room.timeRemaining,
+
               hostToken:
                 room.hostToken,
 
