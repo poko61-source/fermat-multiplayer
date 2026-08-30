@@ -130,11 +130,7 @@ function getRoomState(room) {
     currentLevel: room.currentLevel,
     completedLevels: room.completedLevels,
 
-        returningToMain:
-      room.returningToMain ===
-        true,
-
-currentPuzzle:
+    currentPuzzle:
       room.currentPuzzle,
 
     currentQuestion:
