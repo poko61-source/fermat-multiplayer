@@ -170,13 +170,8 @@ function broadcastRoomState(roomCode) {
             room
           ),
           isHost:
-            (
-              io.sockets.sockets.get(
-                playerSocketId
-              )?.playerToken ||
-              ""
-            ) ===
-              room.hostToken
+            playerSocketId ===
+              room.hostSocketId
         }
       );
     }
@@ -478,7 +473,9 @@ io.on("connection", (socket) => {
 
       const roomCode =
         socket.roomCode ||
-        String(data?.roomCode || "")
+        String(
+          data?.roomCode || ""
+        )
           .trim()
           .toUpperCase();
 
@@ -492,25 +489,52 @@ io.on("connection", (socket) => {
           ""
         ).trim();
 
-      if (
-        !room ||
-        room.status !== "victory" ||
-        (
-          token !== room.hostToken &&
-          socket.id !== room.players[0]
-        )
-      ) {
+      const isHost =
+        Boolean(
+          room &&
+          room.status === "victory" &&
+          (
+            token ===
+              room.hostToken ||
+            socket.id ===
+              room.hostSocketId ||
+            socket.id ===
+              room.players[0]
+          )
+        );
+
+      if (!isHost) {
         return;
       }
 
-      io.to(roomCode).emit(
-        "navigateToMain"
-      );
+      let count = 0;
+
+      const notify =
+        () => {
+
+          count += 1;
+
+          io.to(roomCode).emit(
+            "navigateToMain"
+          );
+
+          if (
+            count < 10
+          ) {
+
+            setTimeout(
+              notify,
+              400
+            );
+          }
+        };
+
+      notify();
     }
   );
 
 
-  socket.on(
+socket.on(
     "hostSelectLevel",
     (data = {}) => {
 
@@ -1005,13 +1029,8 @@ room.players.forEach(
                 room.hostToken,
 
               isHost:
-                (
-                  io.sockets.sockets.get(
-                    playerSocketId
-                  )?.playerToken ||
-                  ""
-                ) ===
-                  room.hostToken
+                playerSocketId ===
+                  room.hostSocketId
             }
           );
         }
