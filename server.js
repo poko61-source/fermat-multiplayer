@@ -169,14 +169,10 @@ function getRoomState(room) {
 // ENVIAR ESTADO A TODA LA SALA
 // --------------------------------------------------
 
-function broadcastRoomState(
-  roomCode
-) {
+function broadcastRoomState(roomCode) {
 
   const room =
-    rooms.get(
-      roomCode
-    );
+    rooms.get(roomCode);
 
   if (!room) {
     return;
@@ -184,24 +180,6 @@ function broadcastRoomState(
 
   room.players.forEach(
     playerSocketId => {
-
-      const playerSocket =
-        io.sockets.sockets.get(
-          playerSocketId
-        );
-
-      const playerToken =
-        playerSocket?.playerToken ||
-        Object.keys(
-          room.playerTokens
-        ).find(
-          token =>
-            room.playerTokens[
-              token
-            ] ===
-              playerSocketId
-        ) ||
-        "";
 
       io.to(
         playerSocketId
@@ -212,8 +190,8 @@ function broadcastRoomState(
             room
           ),
           isHost:
-            playerToken ===
-              room.hostToken
+            playerSocketId ===
+              room.hostSocketId
         }
       );
     }
@@ -777,13 +755,15 @@ io.on("connection", (socket) => {
           data?.roomCode || ""
         ).trim().toUpperCase();
 
-      const playerToken =
+      let playerToken =
         String(
           data?.playerToken || ""
         ).trim();
 
       const room =
-        rooms.get(roomCode);
+        rooms.get(
+          roomCode
+        );
 
       if (
         !room ||
@@ -792,15 +772,67 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const oldSocketId =
-        room.playerTokens[playerToken];
+      const requestedHost =
+        data?.isHost === true;
 
       /*
-       * Un jugador puede tardar unas décimas en desconectarse
-       * al cambiar de página. La identidad lógica es el token:
-       * sustituimos SIEMPRE el socket anterior por el nuevo,
-       * incluso si Socket.IO todavía lo considera conectado.
+       * Nunca permitimos que dos navegadores con el mismo hostToken
+       * sean anfitriones. Si este socket no es el hostSocket actual,
+       * recibe una identidad de invitado nueva.
        */
+      if (
+        playerToken ===
+          room.hostToken &&
+        room.hostSocketId &&
+        room.hostSocketId !==
+          socket.id &&
+        !(
+          requestedHost &&
+          !io.sockets.sockets.has(
+            room.hostSocketId
+          )
+        )
+      ) {
+
+        playerToken =
+          "p_" +
+          Date.now().toString(36) +
+          "_" +
+          Math.random()
+            .toString(36)
+            .slice(2, 12);
+
+        while (
+          room.playerTokens[
+            playerToken
+          ]
+        ) {
+          playerToken =
+            "p_" +
+            Date.now().toString(36) +
+            "_" +
+            Math.random()
+              .toString(36)
+              .slice(2, 12);
+        }
+
+        socket.emit(
+          "playerTokenReassigned",
+          {
+            playerToken,
+            hostToken:
+              room.hostToken,
+            isHost:
+              false
+          }
+        );
+      }
+
+      const oldSocketId =
+        room.playerTokens[
+          playerToken
+        ];
+
       if (
         oldSocketId &&
         oldSocketId !==
@@ -815,27 +847,6 @@ io.on("connection", (socket) => {
                 ? socket.id
                 : id
           );
-
-        if (
-          io.sockets.sockets.has(
-            oldSocketId
-          )
-        ) {
-          const oldSocket =
-            io.sockets.sockets.get(
-              oldSocketId
-            );
-
-          if (
-            oldSocket &&
-            oldSocket.id !==
-              socket.id
-          ) {
-            oldSocket.disconnect(
-              true
-            );
-          }
-        }
       }
 
       if (
@@ -844,12 +855,21 @@ io.on("connection", (socket) => {
         )
       ) {
 
+        if (
+          room.players.length >=
+          MAX_PLAYERS
+        ) {
+          return;
+        }
+
         room.players.push(
           socket.id
         );
       }
 
-      room.playerTokens[playerToken] =
+      room.playerTokens[
+        playerToken
+      ] =
         socket.id;
 
       socket.roomCode =
@@ -860,7 +880,7 @@ io.on("connection", (socket) => {
 
       if (
         playerToken ===
-        room.hostToken
+          room.hostToken
       ) {
         room.hostSocketId =
           socket.id;
@@ -873,19 +893,11 @@ io.on("connection", (socket) => {
       room.lastActivityAt =
         Date.now();
 
-      if (
-        room.returningToMain ===
-        true
-      ) {
-
-        socket.emit(
-          "navigateToMain",
-          {
-            completedLevel:
-              room.currentLevel
-          }
-        );
-      }
+      const isHost =
+        playerToken ===
+          room.hostToken &&
+        socket.id ===
+          room.hostSocketId;
 
       socket.emit(
         "mainRoomReady",
@@ -899,9 +911,8 @@ io.on("connection", (socket) => {
             room.currentLevel,
           hostToken:
             room.hostToken,
-          isHost:
-            playerToken ===
-              room.hostToken
+          playerToken,
+          isHost
         }
       );
 
@@ -911,9 +922,7 @@ io.on("connection", (socket) => {
           ...getRoomState(
             room
           ),
-          isHost:
-            playerToken ===
-              room.hostToken
+          isHost
         }
       );
 
@@ -922,6 +931,8 @@ io.on("connection", (socket) => {
       );
     }
   );
+
+
 
 
   socket.on(
