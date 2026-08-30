@@ -825,6 +825,153 @@ socket.on(
 
 
   socket.on(
+    "resumeRoom",
+    (data = {}) => {
+
+      const roomCode =
+        String(
+          data?.roomCode || ""
+        )
+          .trim()
+          .toUpperCase();
+
+      const playerToken =
+        String(
+          data?.playerToken || ""
+        ).trim();
+
+      const targetLevel =
+        Number(
+          data?.targetLevel || 0
+        );
+
+      const room =
+        rooms.get(roomCode);
+
+      if (
+        !room ||
+        !playerToken
+      ) {
+
+        socket.emit(
+          "roomError",
+          "No se pudo recuperar la sala."
+        );
+
+        return;
+      }
+
+      const existingSocketId =
+        room.playerTokens[playerToken];
+
+      /*
+       * Si esta identidad ya pertenece a otra conexión, la conexión
+       * nueva toma su lugar. No tocamos la identidad del anfitrión:
+       * su hostToken sigue siendo la autoridad.
+       */
+      if (
+        existingSocketId &&
+        existingSocketId !==
+          socket.id
+      ) {
+
+        room.players =
+          room.players.filter(
+            id =>
+              id !==
+              existingSocketId
+          );
+
+      }
+
+      if (
+        !room.players.includes(
+          socket.id
+        )
+      ) {
+
+        if (
+          room.players.length >=
+          MAX_PLAYERS
+        ) {
+
+          socket.emit(
+            "roomError",
+            "La sala está llena."
+          );
+
+          return;
+        }
+
+        room.players.push(
+          socket.id
+        );
+      }
+
+      room.playerTokens[playerToken] =
+        socket.id;
+
+      socket.roomCode =
+        roomCode;
+
+      socket.playerToken =
+        playerToken;
+
+      socket.join(
+        roomCode
+      );
+
+      if (
+        playerToken ===
+        room.hostToken
+      ) {
+
+        room.hostSocketId =
+          socket.id;
+      }
+
+      room.lastActivityAt =
+        Date.now();
+
+      /*
+       * En Nivel 2 no queremos volver a esperar una pantalla de
+       * transición: si el anfitrión ya ha iniciado el nivel,
+       * devolvemos directamente el estado "playing" actual.
+       */
+      socket.emit(
+        "roomState",
+        {
+          ...getRoomState(
+            room
+          ),
+          isHost:
+            playerToken ===
+              room.hostToken
+        }
+      );
+
+      broadcastRoomState(
+        roomCode
+      );
+
+      console.log(
+        "MULTIJUGADOR: Nivel reanudado",
+        {
+          roomCode,
+          targetLevel,
+          currentLevel:
+            room.currentLevel,
+          currentQuestion:
+            room.currentQuestion,
+          players:
+            room.players.length
+        }
+      );
+    }
+  );
+
+
+  socket.on(
     "continueLevel",
     (data = {}) => {
       const roomCode = socket.roomCode;
