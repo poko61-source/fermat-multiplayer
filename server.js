@@ -90,6 +90,7 @@ function createGameState() {
     players: [],
     playerTokens: {},
     hostToken: null,
+    hostSocketId: null,
     lastActivityAt: Date.now(),
     questionPool: [],
     failCount: 0,
@@ -137,7 +138,9 @@ function getRoomState(room) {
     hostId:
       room.players[0],
     hostToken:
-      room.hostToken
+      room.hostToken,
+    hostSocketId:
+      room.hostSocketId
   };
 }
 
@@ -155,9 +158,23 @@ function broadcastRoomState(roomCode) {
     return;
   }
 
-  io.to(roomCode).emit(
-    "roomState",
-    getRoomState(room)
+  room.players.forEach(
+    playerSocketId => {
+
+      io.to(
+        playerSocketId
+      ).emit(
+        "roomState",
+        {
+          ...getRoomState(
+            room
+          ),
+          isHost:
+            playerSocketId ===
+              room.hostSocketId
+        }
+      );
+    }
   );
 }
 
@@ -271,6 +288,7 @@ io.on("connection", (socket) => {
 
       room.playerTokens[playerToken] = socket.id;
       room.hostToken = playerToken;
+      room.hostSocketId = socket.id;
 
 
       rooms.set(
@@ -577,6 +595,14 @@ io.on("connection", (socket) => {
       socket.playerToken =
         playerToken;
 
+      if (
+        playerToken ===
+        room.hostToken
+      ) {
+        room.hostSocketId =
+          socket.id;
+      }
+
       socket.join(roomCode);
 
       room.lastActivityAt =
@@ -584,7 +610,14 @@ io.on("connection", (socket) => {
 
       socket.emit(
         "roomState",
-        getRoomState(room)
+        {
+          ...getRoomState(
+            room
+          ),
+          isHost:
+            socket.id ===
+              room.hostSocketId
+        }
       );
 
       broadcastRoomState(
@@ -945,17 +978,28 @@ socket.on(
       room.bonusRemaining =
         0;
 
-      io.to(roomCode).emit(
-        "gameVictory",
-        {
-          puzzlesSolved:
-            room.puzzlesSolved,
-      
-          totalPuzzles:
-            room.totalPuzzles,
+      room.players.forEach(
+        playerSocketId => {
 
-          hostToken:
-            room.hostToken
+          io.to(
+            playerSocketId
+          ).emit(
+            "gameVictory",
+            {
+              puzzlesSolved:
+                room.puzzlesSolved,
+
+              totalPuzzles:
+                room.totalPuzzles,
+
+              hostToken:
+                room.hostToken,
+
+              isHost:
+                playerSocketId ===
+                  room.hostSocketId
+            }
+          );
         }
       );
 
