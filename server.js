@@ -547,24 +547,95 @@ socket.on(
       const targetLevel =
         Number(data?.targetLevel);
 
+      const isHost =
+        Boolean(
+          room &&
+          room.status ===
+            "victory" &&
+          (
+            socket.id ===
+              room.hostSocketId ||
+            socket.playerToken ===
+              room.hostToken ||
+            socket.id ===
+              room.players[0]
+          )
+        );
+
       if (
-        !room ||
-        room.status !== "victory" ||
-        (
-          socket.playerToken !== room.hostToken &&
-          socket.id !== room.players[0]
-        ) ||
+        !isHost ||
         targetLevel !==
           (room.currentLevel || 1) + 1
       ) {
         return;
       }
 
+      /*
+       * El anfitrión no solo cambia de página:
+       * aquí comienza realmente el siguiente nivel para
+       * toda la sala. Así, cuando los navegadores llegan
+       * a Nivel 2, el servidor ya está en status=playing
+       * y existe un acertijo/reloj válidos.
+       */
+      room.currentLevel =
+        targetLevel;
+
+      room.status =
+        "playing";
+
+      room.currentPuzzle =
+        1;
+
+      room.questionPool =
+        createQuestionPool();
+
+      room.currentQuestion =
+        room.questionPool.shift();
+
+      room.currentQuestionResolved =
+        false;
+
+      room.puzzlesSolved =
+        0;
+
+      room.failCount =
+        0;
+
+      room.timeRemaining =
+        GAME_DURATION;
+
+      room.bonusActive =
+        false;
+
+      room.bonusRemaining =
+        0;
+
+      room.questionStartedAt =
+        Date.now();
+
+      room.lastActivityAt =
+        Date.now();
+
+      broadcastRoomState(
+        roomCode
+      );
+
       io.to(roomCode).emit(
         "navigateToLevel",
         {
           level:
             targetLevel
+        }
+      );
+
+      console.log(
+        "HOST: siguiente nivel iniciado",
+        {
+          roomCode,
+          level:
+            targetLevel,
+          question:
+            room.currentQuestion
         }
       );
     }
