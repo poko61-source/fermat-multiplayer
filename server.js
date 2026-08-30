@@ -559,43 +559,75 @@ socket.on(
     (data = {}) => {
 
       const roomCode =
-        socket.roomCode;
+        socket.roomCode ||
+        String(
+          data?.roomCode || ""
+        ).trim().toUpperCase();
+
+      const playerToken =
+        String(
+          data?.playerToken ||
+          socket.playerToken ||
+          ""
+        ).trim();
 
       const room =
-        rooms.get(roomCode);
-
-      const targetLevel =
-        Number(data?.targetLevel);
-
-      const isHost =
-        Boolean(
-          room &&
-          room.status ===
-            "victory" &&
-          (
-            socket.id ===
-              room.hostSocketId ||
-            socket.playerToken ===
-              room.hostToken ||
-            socket.id ===
-              room.players[0]
-          )
+        rooms.get(
+          roomCode
         );
 
       if (
-        !isHost ||
-        targetLevel !==
-          (room.currentLevel || 1) + 1
+        !room ||
+        !playerToken
       ) {
         return;
       }
 
+      const isHost =
+        playerToken ===
+          room.hostToken;
+
+      if (
+        !isHost ||
+        room.status !==
+          "victory"
+      ) {
+        socket.emit(
+          "hostSelectLevelError",
+          {
+            message:
+              "Solo el anfitrión puede iniciar el siguiente nivel."
+          }
+        );
+        return;
+      }
+
+      const targetLevel =
+        Number(
+          data?.targetLevel || 2
+        );
+
+      if (
+        !Number.isInteger(
+          targetLevel
+        ) ||
+        targetLevel !==
+          (room.currentLevel || 1) + 1
+      ) {
+        socket.emit(
+          "hostSelectLevelError",
+          {
+            message:
+              "Nivel solicitado no válido."
+          }
+        );
+        return;
+      }
+
       /*
-       * El anfitrión no solo cambia de página:
-       * aquí comienza realmente el siguiente nivel para
-       * toda la sala. Así, cuando los navegadores llegan
-       * a Nivel 2, el servidor ya está en status=playing
-       * y existe un acertijo/reloj válidos.
+       * INICIAR REALMENTE EL SIGUIENTE NIVEL.
+       * El cambio de página ocurre DESPUÉS de cambiar
+       * el estado de la sala, no antes.
        */
       room.currentLevel =
         targetLevel;
@@ -624,14 +656,14 @@ socket.on(
       room.timeRemaining =
         GAME_DURATION;
 
+      room.questionStartedAt =
+        Date.now();
+
       room.bonusActive =
         false;
 
       room.bonusRemaining =
         0;
-
-      room.questionStartedAt =
-        Date.now();
 
       room.finalScore =
         null;
@@ -639,12 +671,32 @@ socket.on(
       room.lastActivityAt =
         Date.now();
 
+      /*
+       * Notificar el nuevo estado antes de navegar.
+       */
       broadcastRoomState(
         roomCode
       );
 
       io.to(roomCode).emit(
         "navigateToLevel",
+        {
+          level:
+            targetLevel,
+
+          currentPuzzle:
+            room.currentPuzzle,
+
+          currentQuestion:
+            room.currentQuestion,
+
+          timeRemaining:
+            room.timeRemaining
+        }
+      );
+
+      socket.emit(
+        "hostSelectLevelAccepted",
         {
           level:
             targetLevel
@@ -658,7 +710,9 @@ socket.on(
           level:
             targetLevel,
           question:
-            room.currentQuestion
+            room.currentQuestion,
+          players:
+            room.players.length
         }
       );
     }
