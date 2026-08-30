@@ -170,8 +170,13 @@ function broadcastRoomState(roomCode) {
             room
           ),
           isHost:
-            playerSocketId ===
-              room.hostSocketId
+            (
+              io.sockets.sockets.get(
+                playerSocketId
+              )?.playerToken ||
+              ""
+            ) ===
+              room.hostToken
         }
       );
     }
@@ -1000,8 +1005,13 @@ room.players.forEach(
                 room.hostToken,
 
               isHost:
-                playerSocketId ===
-                  room.hostSocketId
+                (
+                  io.sockets.sockets.get(
+                    playerSocketId
+                  )?.playerToken ||
+                  ""
+                ) ===
+                  room.hostToken
             }
           );
         }
