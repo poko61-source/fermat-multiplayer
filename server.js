@@ -299,7 +299,10 @@ io.on("connection", (socket) => {
       socket.emit(
         "roomCreated",
         {
-          roomCode
+          roomCode,
+          playerToken,
+          hostToken:
+            room.hostToken
         }
       );
 
@@ -327,79 +330,93 @@ io.on("connection", (socket) => {
     (data = {}) => {
 
       const code =
-        String(data?.roomCode || data || "")
+        String(
+          data?.roomCode || data || ""
+        )
           .trim()
           .toUpperCase();
-
-      const playerToken =
-        String(data?.playerToken || "").trim();
-
-      if (!playerToken) {
-        socket.emit("roomError", "Identidad de jugador no válida.");
-        return;
-      }
-
 
       const room =
         rooms.get(code);
 
-
       if (!room) {
-
         socket.emit(
           "roomError",
           "La sala no existe."
         );
-
         return;
       }
-
-
-      if (
-        room.players.length >=
-        MAX_PLAYERS
-      ) {
-
-        socket.emit(
-          "roomError",
-          "La sala está llena."
-        );
-
-        return;
-      }
-
 
       if (
         room.status !==
         "waiting"
       ) {
-
         socket.emit(
           "roomError",
           "La partida ya ha comenzado."
         );
-
         return;
       }
 
+      if (
+        room.players.length >=
+        MAX_PLAYERS
+      ) {
+        socket.emit(
+          "roomError",
+          "La sala está llena."
+        );
+        return;
+      }
 
-      socket.join(
-        code
+      room.playerTokens =
+        room.playerTokens || {};
+
+      let playerToken;
+
+      do {
+        playerToken =
+          "p_" +
+          Date.now().toString(36) +
+          "_" +
+          Math.random()
+            .toString(36)
+            .slice(2, 12);
+      } while (
+        room.playerTokens[playerToken]
       );
-
 
       room.players.push(
         socket.id
       );
 
-      room.playerTokens[playerToken] = socket.id;
-      room.lastActivityAt = Date.now();
+      room.playerTokens[playerToken] =
+        socket.id;
 
       socket.roomCode =
         code;
+
       socket.playerToken =
         playerToken;
 
+      room.lastActivityAt =
+        Date.now();
+
+      socket.join(
+        code
+      );
+
+      socket.emit(
+        "roomJoined",
+        {
+          roomCode:
+            code,
+          playerToken:
+            playerToken,
+          hostToken:
+            room.hostToken
+        }
+      );
 
       io.to(code).emit(
         "playersUpdated",
@@ -409,19 +426,20 @@ io.on("connection", (socket) => {
         }
       );
 
-
       broadcastRoomState(
         code
       );
-
 
       console.log(
         "Jugador unido:",
         socket.id,
         "Sala:",
-        code
+        code,
+        "playerToken:",
+        playerToken,
+        "hostToken:",
+        room.hostToken
       );
-
     }
   );
 
@@ -429,6 +447,7 @@ io.on("connection", (socket) => {
   // ------------------------------------------------
   // REANUDAR PARTIDA TRAS CAMBIO DE PÁGINA
   // ------------------------------------------------
+
 
     socket.on(
     "hostReturnToMain",
@@ -440,20 +459,23 @@ io.on("connection", (socket) => {
           .trim()
           .toUpperCase();
 
-      const playerToken =
+      const room =
+        rooms.get(roomCode);
+
+      const token =
         String(
           data?.playerToken ||
           socket.playerToken ||
           ""
         ).trim();
 
-      const room =
-        rooms.get(roomCode);
-
       if (
         !room ||
-        playerToken !== room.hostToken ||
-        room.status !== "victory"
+        room.status !== "victory" ||
+        (
+          token !== room.hostToken &&
+          socket.id !== room.players[0]
+        )
       ) {
         return;
       }
@@ -480,8 +502,11 @@ io.on("connection", (socket) => {
 
       if (
         !room ||
-        socket.playerToken !== room.hostToken ||
         room.status !== "victory" ||
+        (
+          socket.playerToken !== room.hostToken &&
+          socket.id !== room.players[0]
+        ) ||
         targetLevel !==
           (room.currentLevel || 1) + 1
       ) {
