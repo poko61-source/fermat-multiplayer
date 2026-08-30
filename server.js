@@ -42,6 +42,19 @@ app.get("/test", (req, res) => {
 // CREAR ESTADO DE UNA PARTIDA
 // --------------------------------------------------
 
+function createPlayerToken() {
+
+  return (
+    "p_" +
+    Date.now().toString(36) +
+    "_" +
+    Math.random()
+      .toString(36)
+      .slice(2, 12)
+  );
+}
+
+
 function createQuestionPool() {
 
   const questions =
@@ -647,43 +660,78 @@ socket.on(
     (data = {}) => {
 
       const roomCode =
-        String(data?.roomCode || "")
+        String(
+          data?.roomCode || ""
+        )
           .trim()
           .toUpperCase();
 
-      const playerToken =
-        String(data?.playerToken || "")
-          .trim();
+      let playerToken =
+        String(
+          data?.playerToken || ""
+        ).trim();
 
       const room =
         rooms.get(roomCode);
 
-      if (!room || !playerToken) {
+      if (
+        !room ||
+        !playerToken
+      ) {
         return;
       }
 
-      const oldSocket =
+      /*
+       * No expulsamos nunca a otro socket que ya esté usando
+       * este token. Si dos navegadores llegan con la misma
+       * identidad antigua, el servidor genera una nueva para
+       * el segundo.
+       */
+      const existingSocketId =
         room.playerTokens[playerToken];
 
       if (
-        oldSocket &&
-        oldSocket !== socket.id
+        existingSocketId &&
+        existingSocketId !==
+          socket.id
       ) {
-        room.players =
-          room.players.filter(
-            id => id !== oldSocket
-          );
+
+        playerToken =
+          createPlayerToken();
+
+        while (
+          room.playerTokens[playerToken]
+        ) {
+          playerToken =
+            createPlayerToken();
+        }
+
+        socket.emit(
+          "playerTokenReassigned",
+          {
+            playerToken,
+            hostToken:
+              room.hostToken
+          }
+        );
       }
 
       if (
-        !room.players.includes(socket.id)
+        !room.players.includes(
+          socket.id
+        )
       ) {
+
         if (
-          room.players.length >= MAX_PLAYERS
+          room.players.length >=
+          MAX_PLAYERS
         ) {
           return;
         }
-        room.players.push(socket.id);
+
+        room.players.push(
+          socket.id
+        );
       }
 
       room.playerTokens[playerToken] =
@@ -703,7 +751,9 @@ socket.on(
           socket.id;
       }
 
-      socket.join(roomCode);
+      socket.join(
+        roomCode
+      );
 
       room.lastActivityAt =
         Date.now();
@@ -715,8 +765,8 @@ socket.on(
             room
           ),
           isHost:
-            socket.id ===
-              room.hostSocketId
+            socket.playerToken ===
+              room.hostToken
         }
       );
 
@@ -727,78 +777,6 @@ socket.on(
   );
 
 
-socket.on(
-    "resumeRoom",
-    (data = {}) => {
-      const roomCode = String(data?.roomCode || "").trim().toUpperCase();
-      const playerToken = String(data?.playerToken || "").trim();
-      const room = rooms.get(roomCode);
-
-      if (!room || !playerToken) {
-        socket.emit("roomError", "No se puede reanudar la partida.");
-        return;
-      }
-
-      const previousSocketId = room.playerTokens[playerToken];
-
-      if (previousSocketId && previousSocketId !== socket.id) {
-        room.players = room.players.filter((id) => id !== previousSocketId);
-      }
-
-      if (!room.players.includes(socket.id)) {
-        if (room.players.length >= MAX_PLAYERS) {
-          socket.emit("roomError", "La sala está llena.");
-          return;
-        }
-        room.players.push(socket.id);
-      }
-
-      room.playerTokens[playerToken] = socket.id;
-      room.lastActivityAt = Date.now();
-      socket.roomCode = roomCode;
-      socket.playerToken = playerToken;
-      socket.join(roomCode);
-
-      // Si este jugador está entrando al nivel siguiente, queda marcado
-      // como listo. El servidor solo abrirá el nuevo nivel cuando TODOS
-      // los jugadores que terminaron el nivel anterior hayan reaparecido.
-      const targetLevel = Number(data?.targetLevel);
-      if (
-        room.status === "victory" &&
-        Number.isInteger(targetLevel) &&
-        targetLevel === room.currentLevel + 1
-      ) {
-        if (!Array.isArray(room.nextLevelPlayerTokens) ||
-            room.nextLevelPlayerTokens.length === 0) {
-          room.nextLevelPlayerTokens = Object.keys(room.playerTokens);
-        }
-
-        room.nextLevelReady[playerToken] = true;
-        console.log(
-          "Jugador listo para siguiente nivel:",
-          roomCode,
-          playerToken
-        );
-      }
-
-      broadcastRoomState(roomCode);
-      startNextLevelIfReady(roomCode);
-
-      console.log(
-        "Partida reanudada:",
-        roomCode,
-        "Nivel:",
-        room.currentLevel,
-        "Jugador:",
-        socket.id
-      );
-    }
-  );
-
-
-  // ------------------------------------------------
-  // CONTINUAR AL SIGUIENTE NIVEL
-  // ------------------------------------------------
 
   socket.on(
     "continueLevel",
