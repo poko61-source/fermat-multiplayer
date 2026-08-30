@@ -680,9 +680,7 @@ socket.on(
         ).trim();
 
       const room =
-        rooms.get(
-          roomCode
-        );
+        rooms.get(roomCode);
 
       if (
         !room ||
@@ -692,26 +690,49 @@ socket.on(
       }
 
       const oldSocketId =
-        room.playerTokens[
-          playerToken
-        ];
+        room.playerTokens[playerToken];
 
+      /*
+       * Un jugador puede tardar unas décimas en desconectarse
+       * al cambiar de página. La identidad lógica es el token:
+       * sustituimos SIEMPRE el socket anterior por el nuevo,
+       * incluso si Socket.IO todavía lo considera conectado.
+       */
       if (
         oldSocketId &&
         oldSocketId !==
-          socket.id &&
-        !io.sockets.sockets.has(
-          oldSocketId
-        )
+          socket.id
       ) {
+
         room.players =
           room.players.map(
             id =>
               id ===
-              oldSocketId
+                oldSocketId
                 ? socket.id
                 : id
           );
+
+        if (
+          io.sockets.sockets.has(
+            oldSocketId
+          )
+        ) {
+          const oldSocket =
+            io.sockets.sockets.get(
+              oldSocketId
+            );
+
+          if (
+            oldSocket &&
+            oldSocket.id !==
+              socket.id
+          ) {
+            oldSocket.disconnect(
+              true
+            );
+          }
+        }
       }
 
       if (
@@ -719,21 +740,13 @@ socket.on(
           socket.id
         )
       ) {
-        if (
-          room.players.length >=
-          MAX_PLAYERS
-        ) {
-          return;
-        }
 
         room.players.push(
           socket.id
         );
       }
 
-      room.playerTokens[
-        playerToken
-      ] =
+      room.playerTokens[playerToken] =
         socket.id;
 
       socket.roomCode =
@@ -756,6 +769,24 @@ socket.on(
 
       room.lastActivityAt =
         Date.now();
+
+      socket.emit(
+        "mainRoomReady",
+        {
+          roomCode,
+          players:
+            room.players.length,
+          completedLevels:
+            room.completedLevels,
+          currentLevel:
+            room.currentLevel,
+          hostToken:
+            room.hostToken,
+          isHost:
+            playerToken ===
+              room.hostToken
+        }
+      );
 
       socket.emit(
         "roomState",
@@ -791,9 +822,7 @@ socket.on(
         ).trim();
 
       const room =
-        rooms.get(
-          roomCode
-        );
+        rooms.get(roomCode);
 
       if (
         !room ||
@@ -803,26 +832,41 @@ socket.on(
       }
 
       const oldSocketId =
-        room.playerTokens[
-          playerToken
-        ];
+        room.playerTokens[playerToken];
 
       if (
         oldSocketId &&
         oldSocketId !==
-          socket.id &&
-        !io.sockets.sockets.has(
-          oldSocketId
-        )
+          socket.id
       ) {
+
         room.players =
           room.players.map(
             id =>
               id ===
-              oldSocketId
+                oldSocketId
                 ? socket.id
                 : id
           );
+
+        if (
+          io.sockets.sockets.has(
+            oldSocketId
+          )
+        ) {
+          const oldSocket =
+            io.sockets.sockets.get(
+              oldSocketId
+            );
+
+          if (
+            oldSocket
+          ) {
+            oldSocket.disconnect(
+              true
+            );
+          }
+        }
       }
 
       if (
@@ -830,6 +874,7 @@ socket.on(
           socket.id
         )
       ) {
+
         if (
           room.players.length >=
           MAX_PLAYERS
@@ -842,9 +887,7 @@ socket.on(
         );
       }
 
-      room.playerTokens[
-        playerToken
-      ] =
+      room.playerTokens[playerToken] =
         socket.id;
 
       socket.roomCode =
