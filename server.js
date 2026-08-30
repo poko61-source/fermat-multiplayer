@@ -666,12 +666,12 @@ socket.on(
           .trim()
           .toUpperCase();
 
-      let playerToken =
+      const playerToken =
         String(
           data?.playerToken || ""
         ).trim();
 
-      const isHostHint =
+      const requestedHost =
         data?.isHost === true;
 
       const room =
@@ -681,97 +681,54 @@ socket.on(
         !room ||
         !playerToken
       ) {
+
+        socket.emit(
+          "mainRoomError",
+          {
+            message:
+              "La sala ya no está disponible."
+          }
+        );
+
         return;
       }
 
-      const existingSocketId =
-        room.playerTokens[playerToken];
-
       /*
-       * Si el token es el del anfitrión, ese token conserva
-       * siempre el papel de anfitrión. Solo un navegador que
-       * afirme ser invitado con ese token recibe uno nuevo.
+       * Para regresar a index no cambiamos la identidad.
+       * Si el token corresponde al anfitrión, este socket
+       * pasa a ser el socket activo del anfitrión.
        */
       if (
         playerToken ===
         room.hostToken
       ) {
 
+        room.hostSocketId =
+          socket.id;
+
+      } else {
+
+        /*
+         * El invitado conserva su token. Si la entrada del
+         * mapa apunta a una conexión antigua, reemplazamos
+         * solo esa conexión; no eliminamos al anfitrión.
+         */
+        const oldSocketId =
+          room.playerTokens[playerToken];
+
         if (
-          isHostHint
-        ) {
-
-          if (
-            existingSocketId &&
-            existingSocketId !==
-              socket.id
-          ) {
-
-            room.players =
-              room.players.filter(
-                id =>
-                  id !==
-                  existingSocketId
-              );
-          }
-
-          room.hostSocketId =
-            socket.id;
-
-        } else if (
-          existingSocketId &&
-          existingSocketId !==
+          oldSocketId &&
+          oldSocketId !==
             socket.id
         ) {
 
-          playerToken =
-            createPlayerToken();
-
-          while (
-            room.playerTokens[playerToken]
-          ) {
-            playerToken =
-              createPlayerToken();
-          }
-
-          socket.emit(
-            "playerTokenReassigned",
-            {
-              playerToken,
-              hostToken:
-                room.hostToken,
-              isHost:
-                false
-            }
-          );
+          room.players =
+            room.players.filter(
+              id =>
+                id !==
+                oldSocketId
+            );
         }
-
-      } else if (
-        existingSocketId &&
-        existingSocketId !==
-          socket.id
-      ) {
-
-        playerToken =
-          createPlayerToken();
-
-        while (
-          room.playerTokens[playerToken]
-        ) {
-          playerToken =
-            createPlayerToken();
-        }
-
-        socket.emit(
-          "playerTokenReassigned",
-          {
-            playerToken,
-            hostToken:
-              room.hostToken,
-            isHost:
-              false
-          }
-        );
       }
 
       if (
@@ -784,6 +741,15 @@ socket.on(
           room.players.length >=
           MAX_PLAYERS
         ) {
+
+          socket.emit(
+            "mainRoomError",
+            {
+              message:
+                "La sala está llena."
+            }
+          );
+
           return;
         }
 
@@ -801,14 +767,6 @@ socket.on(
       socket.playerToken =
         playerToken;
 
-      if (
-        playerToken ===
-        room.hostToken
-      ) {
-        room.hostSocketId =
-          socket.id;
-      }
-
       socket.join(
         roomCode
       );
@@ -816,20 +774,51 @@ socket.on(
       room.lastActivityAt =
         Date.now();
 
+      const isHost =
+        playerToken ===
+        room.hostToken;
+
+      socket.emit(
+        "mainRoomReady",
+        {
+          roomCode,
+          players:
+            room.players.length,
+          completedLevels:
+            room.completedLevels,
+          currentLevel:
+            room.currentLevel,
+          hostToken:
+            room.hostToken,
+          isHost
+        }
+      );
+
       socket.emit(
         "roomState",
         {
           ...getRoomState(
             room
           ),
-          isHost:
-            playerToken ===
-              room.hostToken
+          isHost
         }
       );
 
       broadcastRoomState(
         roomCode
+      );
+
+      console.log(
+        "MAIN ROOM REANUDADA:",
+        {
+          roomCode,
+          socket:
+            socket.id,
+          playerToken,
+          isHost,
+          players:
+            room.players.length
+        }
       );
     }
   );
