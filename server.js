@@ -341,14 +341,9 @@ function startNextLevelForRoom(
    * Los navegadores lo usarán al cargar Nivel 2.
    */
   room.nextLevelPlayerTokens =
-    room.players
-      .map(
-        id =>
-          io.sockets.sockets.get(
-            id
-          )?.playerToken
-      )
-      .filter(Boolean);
+    Object.keys(
+      room.playerTokens || {}
+    ).filter(Boolean);
 
   room.nextLevelReady =
     {};
@@ -730,6 +725,19 @@ io.on("connection", (socket) => {
         };
 
       notify();
+
+      /*
+       * Confirmación directa al socket que lanzó la orden.
+       * Esto permite al anfitrión cambiar de página incluso si
+       * su socket original se cerró al mostrar la victoria.
+       */
+      socket.emit(
+        "hostReturnToMainAccepted",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
 
       console.log(
         "HOST: regreso a principal",
