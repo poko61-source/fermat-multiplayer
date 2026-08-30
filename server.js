@@ -169,10 +169,14 @@ function getRoomState(room) {
 // ENVIAR ESTADO A TODA LA SALA
 // --------------------------------------------------
 
-function broadcastRoomState(roomCode) {
+function broadcastRoomState(
+  roomCode
+) {
 
   const room =
-    rooms.get(roomCode);
+    rooms.get(
+      roomCode
+    );
 
   if (!room) {
     return;
@@ -180,6 +184,24 @@ function broadcastRoomState(roomCode) {
 
   room.players.forEach(
     playerSocketId => {
+
+      const playerSocket =
+        io.sockets.sockets.get(
+          playerSocketId
+        );
+
+      const playerToken =
+        playerSocket?.playerToken ||
+        Object.keys(
+          room.playerTokens
+        ).find(
+          token =>
+            room.playerTokens[
+              token
+            ] ===
+              playerSocketId
+        ) ||
+        "";
 
       io.to(
         playerSocketId
@@ -190,8 +212,8 @@ function broadcastRoomState(roomCode) {
             room
           ),
           isHost:
-            playerSocketId ===
-              room.hostSocketId
+            playerToken ===
+              room.hostToken
         }
       );
     }
