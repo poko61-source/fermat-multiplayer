@@ -130,7 +130,11 @@ function getRoomState(room) {
     currentLevel: room.currentLevel,
     completedLevels: room.completedLevels,
 
-    currentPuzzle:
+        returningToMain:
+      room.returningToMain ===
+        true,
+
+currentPuzzle:
       room.currentPuzzle,
 
     currentQuestion:
@@ -546,12 +550,8 @@ io.on("connection", (socket) => {
 
       if (
         !room ||
-        !(
-          socket.id ===
-            room.hostSocketId ||
-          playerToken ===
-            room.hostToken
-        )
+        playerToken !==
+          room.hostToken
       ) {
         socket.emit(
           "hostReturnToMainError",
@@ -1398,8 +1398,13 @@ room.players.forEach(
                 room.hostToken,
 
               isHost:
-                playerSocketId ===
-                  room.hostSocketId
+                (
+                  io.sockets.sockets.get(
+                    playerSocketId
+                  )?.playerToken ||
+                  ""
+                ) ===
+                  room.hostToken
             }
           );
         }
