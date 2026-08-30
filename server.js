@@ -495,53 +495,65 @@ io.on("connection", (socket) => {
         socket.roomCode ||
         String(
           data?.roomCode || ""
-        )
-          .trim()
-          .toUpperCase();
+        ).trim().toUpperCase();
 
-      const room =
-        rooms.get(roomCode);
-
-      const token =
+      const playerToken =
         String(
           data?.playerToken ||
           socket.playerToken ||
           ""
         ).trim();
 
-      const isHost =
-        Boolean(
-          room &&
-          room.status === "victory" &&
-          (
-            token ===
-              room.hostToken ||
-            socket.id ===
-              room.hostSocketId ||
-            socket.id ===
-              room.players[0]
-          )
+      const room =
+        rooms.get(
+          roomCode
         );
 
-      if (!isHost) {
+      if (
+        !room ||
+        playerToken !==
+          room.hostToken
+      ) {
+        socket.emit(
+          "hostReturnToMainError",
+          {
+            message:
+              "La orden solo puede ejecutarla el anfitrión."
+          }
+        );
         return;
       }
 
-      let count = 0;
+      /*
+       * Marcamos que la sala está en la transición al
+       * índice. Este estado queda almacenado aunque un
+       * navegador pierda el evento durante la navegación.
+       */
+      room.returningToMain =
+        true;
+
+      room.lastActivityAt =
+        Date.now();
+
+      let sent =
+        0;
 
       const notify =
         () => {
 
-          count += 1;
+          sent += 1;
 
           io.to(roomCode).emit(
-            "navigateToMain"
+            "navigateToMain",
+            {
+              completedLevel:
+                room.currentLevel
+            }
           );
 
           if (
-            count < 10
+            sent < 10
           ) {
-
             setTimeout(
               notify,
               400
@@ -550,11 +562,19 @@ io.on("connection", (socket) => {
         };
 
       notify();
+
+      console.log(
+        "HOST: regreso a principal",
+        {
+          roomCode,
+          playerToken
+        }
+      );
     }
   );
 
 
-socket.on(
+  socket.on(
     "hostSelectLevel",
     (data = {}) => {
 
@@ -589,8 +609,12 @@ socket.on(
 
       if (
         !isHost ||
-        room.status !==
-          "victory"
+        !(
+          room.status ===
+            "victory" ||
+          room.returningToMain ===
+            true
+        )
       ) {
         socket.emit(
           "hostSelectLevelError",
@@ -631,6 +655,9 @@ socket.on(
        */
       room.currentLevel =
         targetLevel;
+
+      room.returningToMain =
+        false;
 
       room.status =
         "playing";
@@ -823,6 +850,20 @@ socket.on(
 
       room.lastActivityAt =
         Date.now();
+
+      if (
+        room.returningToMain ===
+        true
+      ) {
+
+        socket.emit(
+          "navigateToMain",
+          {
+            completedLevel:
+              room.currentLevel
+          }
+        );
+      }
 
       socket.emit(
         "mainRoomReady",
@@ -1318,8 +1359,13 @@ room.players.forEach(
                 room.hostToken,
 
               isHost:
-                playerSocketId ===
-                  room.hostSocketId
+                (
+                  io.sockets.sockets.get(
+                    playerSocketId
+                  )?.playerToken ||
+                  ""
+                ) ===
+                  room.hostToken
             }
           );
         }
