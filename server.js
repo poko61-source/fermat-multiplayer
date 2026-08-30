@@ -473,9 +473,7 @@ io.on("connection", (socket) => {
 
       const roomCode =
         socket.roomCode ||
-        String(
-          data?.roomCode || ""
-        )
+        String(data?.roomCode || "")
           .trim()
           .toUpperCase();
 
@@ -489,40 +487,33 @@ io.on("connection", (socket) => {
           ""
         ).trim();
 
-      const isHost =
-        Boolean(
-          room &&
-          (
-            socket.id ===
-              room.hostSocketId ||
-            token ===
-              room.hostToken ||
-            socket.id ===
-              room.players[0]
-          )
-        );
-
       if (
         !room ||
-        !isHost ||
-        room.status !==
-          "victory"
+        room.status !== "victory" ||
+        (
+          token !== room.hostToken &&
+          socket.id !== room.players[0]
+        )
       ) {
         return;
       }
 
-      let sent = 0;
+      let sent =
+        0;
 
       const notify =
         () => {
 
-          sent += 1;
+          sent +=
+            1;
 
           io.to(roomCode).emit(
             "navigateToMain"
           );
 
-          if (sent < 8) {
+          if (
+            sent < 8
+          ) {
             setTimeout(
               notify,
               500
@@ -531,11 +522,6 @@ io.on("connection", (socket) => {
         };
 
       notify();
-
-      console.log(
-        "HOST: orden de volver a principal",
-        roomCode
-      );
     }
   );
 
