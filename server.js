@@ -94,6 +94,7 @@ function createGameState() {
     completedLevels: [],
     currentPuzzle: 0,
     puzzlesSolved: 0,
+    score: 0,
     totalPuzzles: TOTAL_PUZZLES,
     timeRemaining: GAME_DURATION,
 
@@ -148,6 +149,8 @@ function getRoomState(room) {
 
     players:
       room.players.length,
+    score:
+      room.score,
     hostId:
       room.players[0],
     hostToken:
@@ -671,64 +674,38 @@ socket.on(
           data?.playerToken || ""
         ).trim();
 
-      const requestedHost =
-        data?.isHost === true;
-
       const room =
-        rooms.get(roomCode);
+        rooms.get(
+          roomCode
+        );
 
       if (
         !room ||
         !playerToken
       ) {
-
-        socket.emit(
-          "mainRoomError",
-          {
-            message:
-              "La sala ya no está disponible."
-          }
-        );
-
         return;
       }
 
+      const oldSocketId =
+        room.playerTokens[playerToken];
+
       /*
-       * Para regresar a index no cambiamos la identidad.
-       * Si el token corresponde al anfitrión, este socket
-       * pasa a ser el socket activo del anfitrión.
+       * Un jugador vuelve a su asiento lógico.
        */
       if (
-        playerToken ===
-        room.hostToken
+        oldSocketId &&
+        oldSocketId !==
+          socket.id
       ) {
 
-        room.hostSocketId =
-          socket.id;
-
-      } else {
-
-        /*
-         * El invitado conserva su token. Si la entrada del
-         * mapa apunta a una conexión antigua, reemplazamos
-         * solo esa conexión; no eliminamos al anfitrión.
-         */
-        const oldSocketId =
-          room.playerTokens[playerToken];
-
-        if (
-          oldSocketId &&
-          oldSocketId !==
-            socket.id
-        ) {
-
-          room.players =
-            room.players.filter(
-              id =>
-                id !==
-                oldSocketId
-            );
-        }
+        room.players =
+          room.players.map(
+            id =>
+              id ===
+              oldSocketId
+                ? socket.id
+                : id
+          );
       }
 
       if (
@@ -741,15 +718,6 @@ socket.on(
           room.players.length >=
           MAX_PLAYERS
         ) {
-
-          socket.emit(
-            "mainRoomError",
-            {
-              message:
-                "La sala está llena."
-            }
-          );
-
           return;
         }
 
@@ -767,6 +735,14 @@ socket.on(
       socket.playerToken =
         playerToken;
 
+      if (
+        playerToken ===
+        room.hostToken
+      ) {
+        room.hostSocketId =
+          socket.id;
+      }
+
       socket.join(
         roomCode
       );
@@ -774,51 +750,20 @@ socket.on(
       room.lastActivityAt =
         Date.now();
 
-      const isHost =
-        playerToken ===
-        room.hostToken;
-
-      socket.emit(
-        "mainRoomReady",
-        {
-          roomCode,
-          players:
-            room.players.length,
-          completedLevels:
-            room.completedLevels,
-          currentLevel:
-            room.currentLevel,
-          hostToken:
-            room.hostToken,
-          isHost
-        }
-      );
-
       socket.emit(
         "roomState",
         {
           ...getRoomState(
             room
           ),
-          isHost
+          isHost:
+            playerToken ===
+              room.hostToken
         }
       );
 
       broadcastRoomState(
         roomCode
-      );
-
-      console.log(
-        "MAIN ROOM REANUDADA:",
-        {
-          roomCode,
-          socket:
-            socket.id,
-          playerToken,
-          isHost,
-          players:
-            room.players.length
-        }
       );
     }
   );
@@ -831,57 +776,42 @@ socket.on(
       const roomCode =
         String(
           data?.roomCode || ""
-        )
-          .trim()
-          .toUpperCase();
+        ).trim().toUpperCase();
 
       const playerToken =
         String(
           data?.playerToken || ""
         ).trim();
 
-      const targetLevel =
-        Number(
-          data?.targetLevel || 0
-        );
-
       const room =
-        rooms.get(roomCode);
+        rooms.get(
+          roomCode
+        );
 
       if (
         !room ||
         !playerToken
       ) {
-
-        socket.emit(
-          "roomError",
-          "No se pudo recuperar la sala."
-        );
-
         return;
       }
 
-      const existingSocketId =
+      const oldSocketId =
         room.playerTokens[playerToken];
 
-      /*
-       * Si esta identidad ya pertenece a otra conexión, la conexión
-       * nueva toma su lugar. No tocamos la identidad del anfitrión:
-       * su hostToken sigue siendo la autoridad.
-       */
       if (
-        existingSocketId &&
-        existingSocketId !==
+        oldSocketId &&
+        oldSocketId !==
           socket.id
       ) {
 
         room.players =
-          room.players.filter(
+          room.players.map(
             id =>
-              id !==
-              existingSocketId
+              id ===
+              oldSocketId
+                ? socket.id
+                : id
           );
-
       }
 
       if (
@@ -894,12 +824,6 @@ socket.on(
           room.players.length >=
           MAX_PLAYERS
         ) {
-
-          socket.emit(
-            "roomError",
-            "La sala está llena."
-          );
-
           return;
         }
 
@@ -917,27 +841,21 @@ socket.on(
       socket.playerToken =
         playerToken;
 
-      socket.join(
-        roomCode
-      );
-
       if (
         playerToken ===
         room.hostToken
       ) {
-
         room.hostSocketId =
           socket.id;
       }
 
+      socket.join(
+        roomCode
+      );
+
       room.lastActivityAt =
         Date.now();
 
-      /*
-       * En Nivel 2 no queremos volver a esperar una pantalla de
-       * transición: si el anfitrión ya ha iniciado el nivel,
-       * devolvemos directamente el estado "playing" actual.
-       */
       socket.emit(
         "roomState",
         {
@@ -955,17 +873,11 @@ socket.on(
       );
 
       console.log(
-        "MULTIJUGADOR: Nivel reanudado",
-        {
-          roomCode,
-          targetLevel,
-          currentLevel:
-            room.currentLevel,
-          currentQuestion:
-            room.currentQuestion,
-          players:
-            room.players.length
-        }
+        "Nivel reanudado:",
+        roomCode,
+        room.currentLevel,
+        "jugador:",
+        socket.id
       );
     }
   );
@@ -1270,6 +1182,10 @@ room.players.forEach(
               timeRemaining:
                 room.timeRemaining,
 
+              score:
+                room.finalScore ||
+                room.score,
+
               hostToken:
                 room.hostToken,
 
@@ -1523,22 +1439,38 @@ room.failCount +=
   socket.on(
     "disconnect",
     () => {
-      const roomCode = socket.roomCode;
-      if (!roomCode) return;
 
-      const room = rooms.get(roomCode);
-      if (!room) return;
+      const roomCode =
+        socket.roomCode;
 
-      room.players = room.players.filter(
-        (id) => id !== socket.id
-      );
+      if (
+        !roomCode
+      ) {
+        return;
+      }
 
-      room.lastActivityAt = Date.now();
+      const room =
+        rooms.get(
+          roomCode
+        );
 
-      broadcastRoomState(roomCode);
+      if (
+        !room
+      ) {
+        return;
+      }
+
+      room.lastActivityAt =
+        Date.now();
+
+      /*
+       * El asiento lógico no se elimina al cambiar de página.
+       * La reconexión por resumeMainRoom/resumeRoom sustituye
+       * el socket antiguo por el nuevo.
+       */
 
       console.log(
-        "Jugador desconectado, sala conservada:",
+        "Jugador desconectado; asiento conservado:",
         socket.id,
         "Sala:",
         roomCode
