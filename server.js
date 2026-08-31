@@ -1296,6 +1296,11 @@ io.on("connection", (socket) => {
       broadcastRoomState(
         roomCode
       );
+
+      socket.emit("multiplayerSync", {
+        ...getRoomState(room),
+        isHost: playerToken === room.hostToken
+      });
     }
   );
 
@@ -1899,6 +1904,13 @@ room.failCount +=
       }
     );
 
+    io.to(roomCode).emit("puzzleAdvanced", {
+      currentPuzzle: room.currentPuzzle,
+      currentQuestion: room.currentQuestion,
+      timeRemaining: room.timeRemaining,
+      bonusActive: false,
+      bonusRemaining: 0
+    });
 
     broadcastRoomState(
       roomCode
