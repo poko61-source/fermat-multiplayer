@@ -834,6 +834,16 @@ io.on("connection", (socket) => {
             targetLevel
         }
       );
+
+      socket.emit(
+        "navigateToLevel",
+        {
+          level: targetLevel,
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          timeRemaining: room.timeRemaining
+        }
+      );
     }
   );
 
@@ -925,6 +935,18 @@ io.on("connection", (socket) => {
         {
           level:
             targetLevel
+        }
+      );
+
+      // El socket temporal del anfitrión puede no pertenecer todavía
+      // al room. Le enviamos también la orden directamente.
+      socket.emit(
+        "navigateToLevel",
+        {
+          level: targetLevel,
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          timeRemaining: room.timeRemaining
         }
       );
     }
