@@ -370,6 +370,31 @@ function startNextLevelForRoom(
     navigationPayload
   );
 
+  // Repetir brevemente la orden cubre la ventana de reconexión
+  // durante el cambio de página. En Nivel 2 los eventos duplicados
+  // son inocuos porque solo vuelven a cargar la misma pregunta.
+  [500, 1500, 3000, 5000].forEach(delay => {
+    setTimeout(() => {
+      const currentRoom = rooms.get(roomCode);
+      if (!currentRoom ||
+          currentRoom.currentLevel !== targetLevel ||
+          currentRoom.status !== "playing") return;
+
+      const payload = {
+        level: targetLevel,
+        currentPuzzle: currentRoom.currentPuzzle,
+        currentQuestion: currentRoom.currentQuestion,
+        timeRemaining: currentRoom.timeRemaining
+      };
+
+      currentRoom.players.forEach(playerSocketId => {
+        if (io.sockets.sockets.has(playerSocketId)) {
+          io.to(playerSocketId).emit("navigateToLevel", payload);
+        }
+      });
+    }, delay);
+  });
+
   room.players.forEach(playerSocketId => {
     if (io.sockets.sockets.has(playerSocketId)) {
       io.to(playerSocketId).emit(
