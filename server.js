@@ -297,6 +297,9 @@ function startNextLevelForRoom(
   room.returningToMain =
     false;
 
+  room.pendingNavigationLevel =
+    targetLevel;
+
   room.status =
     "playing";
 
@@ -352,24 +355,29 @@ function startNextLevelForRoom(
     roomCode
   );
 
-  io.to(
-    roomCode
-  ).emit(
+  // Enviamos la navegación tanto por room como por socket individual.
+  // Así no dependemos de que el socket del invitado haya conservado
+  // correctamente su pertenencia al room durante el cambio de página.
+  const navigationPayload = {
+    level: targetLevel,
+    currentPuzzle: room.currentPuzzle,
+    currentQuestion: room.currentQuestion,
+    timeRemaining: room.timeRemaining
+  };
+
+  io.to(roomCode).emit(
     "navigateToLevel",
-    {
-      level:
-        targetLevel,
-
-      currentPuzzle:
-        room.currentPuzzle,
-
-      currentQuestion:
-        room.currentQuestion,
-
-      timeRemaining:
-        room.timeRemaining
-    }
+    navigationPayload
   );
+
+  room.players.forEach(playerSocketId => {
+    if (io.sockets.sockets.has(playerSocketId)) {
+      io.to(playerSocketId).emit(
+        "navigateToLevel",
+        navigationPayload
+      );
+    }
+  });
 
   console.log(
     "MULTIJUGADOR: salto directo al siguiente nivel",
@@ -1102,6 +1110,19 @@ io.on("connection", (socket) => {
         }
       );
 
+      if (
+        Number(room.pendingNavigationLevel || 0) === 2 &&
+        Number(room.currentLevel || 0) === 2 &&
+        room.status === "playing"
+      ) {
+        socket.emit("navigateToLevel", {
+          level: 2,
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          timeRemaining: room.timeRemaining
+        });
+      }
+
       broadcastRoomState(
         roomCode
       );
@@ -1224,6 +1245,19 @@ io.on("connection", (socket) => {
               room.hostToken
         }
       );
+
+      if (
+        Number(room.pendingNavigationLevel || 0) === 2 &&
+        Number(room.currentLevel || 0) === 2 &&
+        room.status === "playing"
+      ) {
+        socket.emit("navigateToLevel", {
+          level: 2,
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          timeRemaining: room.timeRemaining
+        });
+      }
 
       broadcastRoomState(
         roomCode
