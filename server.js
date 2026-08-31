@@ -4,30 +4,6 @@ import { Server } from "socket.io";
 
 const app = express();
 
-/*
- * SERVIDOR WEB LOCAL + SOCKET.IO
- *
- * En local, el mismo servidor sirve el juego completo:
- *   http://localhost:3000
- *
- * En Render, esto sigue funcionando igual y Render continúa
- * proporcionando el mismo servidor de Socket.IO.
- */
-const publicDir = new URL("./", import.meta.url).pathname;
-
-app.use((req, res, next) => {
-  // No exponemos los archivos de configuración/servidor.
-  if (
-    req.path === "/server.js" ||
-    req.path === "/package.json"
-  ) {
-    return res.sendStatus(404);
-  }
-  next();
-});
-
-app.use(express.static(publicDir));
-
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
@@ -54,8 +30,8 @@ const ROOM_IDLE_TIMEOUT = 15 * 60 * 1000;
 
 
 app.get("/", (req, res) => {
-  res.sendFile(
-    new URL("./index.html", import.meta.url).pathname
+  res.send(
+    "Servidor multijugador de La Habitación de Fermat funcionando."
   );
 });
 
@@ -765,10 +741,10 @@ io.on("connection", (socket) => {
 
           io.to(roomCode).emit(
             "navigateToMain",
-            {
+            socket.emit("navigateToMain", {
               completedLevel:
                 room.currentLevel
-            }
+            });
           );
 
           if (
@@ -1670,18 +1646,16 @@ room.players.forEach(
        * jugador que llegue un poco más tarde al índice reciba
        * también la orden de navegación al reconectarse.
        */
-      room.returningToMain = true;
+      /*
+       * Al terminar el Nivel 1, los invitados permanecen
+       * en la pantalla final. Solo el anfitrión irá al índice
+       * global para decidir cuándo comenzar el Nivel 2.
+       */
+      room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
-      io.to(roomCode).emit(
-        "navigateToMain",
-        {
-          completedLevel: room.currentLevel
-        }
-      );
-
       console.log(
-        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
+        "MULTIJUGADOR: VICTORIA -> ANFITRIÓN AL ÍNDICE, INVITADOS EN ESPERA",
         roomCode
       );
 
