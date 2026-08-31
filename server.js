@@ -1695,6 +1695,20 @@ room.players.forEach(
           bonus: room.bonusRemaining
         }
       );
+
+      // Evento explícito de avance. Los clientes lo usan para cargar
+      // inmediatamente el siguiente acertijo sin depender del orden
+      // de llegada de varios roomState.
+      io.to(roomCode).emit(
+        "puzzleAdvanced",
+        {
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          timeRemaining: room.timeRemaining,
+          bonusActive: room.bonusActive,
+          bonusRemaining: room.bonusRemaining
+        }
+      );
     }
       
 
