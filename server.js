@@ -112,6 +112,7 @@ function createGameState() {
     lastActivityAt: Date.now(),
     questionPool: [],
     failCount: 0,
+    questionStartedAt: null,
 
     // Jugadores que deben reaparecer en el siguiente nivel.
     nextLevelPlayerTokens: [],
@@ -150,6 +151,9 @@ function getRoomState(room) {
 
     bonusRemaining:
       room.bonusRemaining,
+
+    questionStartedAt:
+      room.questionStartedAt || null,
 
     players:
       room.players.length,
@@ -239,6 +243,7 @@ function startNextLevelIfReady(roomCode) {
   room.currentQuestionResolved = false;
   room.puzzlesSolved = 0;
   room.failCount = 0;
+  room.questionStartedAt = Date.now();
   room.timeRemaining = GAME_DURATION;
   room.bonusActive = false;
   room.bonusRemaining = 0;
@@ -1453,6 +1458,49 @@ io.on("connection", (socket) => {
 
 
   // ------------------------------------------------
+  // AVANZAR ACERTIJO EN TODA LA SALA
+  // ------------------------------------------------
+
+  function advanceMultiplayerPuzzle(roomCode, room, reason) {
+    if (!room || room.status !== "playing") return false;
+    if (room.currentQuestionResolved) return false;
+
+    room.currentPuzzle += 1;
+    room.currentQuestion = room.questionPool.shift();
+    room.currentQuestionResolved = false;
+    room.failCount = 0;
+    room.questionStartedAt = Date.now();
+    room.bonusActive = reason === "solved";
+    room.bonusRemaining = reason === "solved" ? PUZZLE_BONUS : 0;
+    room.lastActivityAt = Date.now();
+
+    if (!room.currentQuestion) {
+      room.status = "defeat";
+      broadcastRoomState(roomCode);
+      return false;
+    }
+
+    console.log("MULTIJUGADOR: NUEVO ACERTIJO", {
+      roomCode,
+      puzzle: room.currentPuzzle,
+      question: room.currentQuestion,
+      reason
+    });
+
+    io.to(roomCode).emit("puzzleAdvanced", {
+      currentPuzzle: room.currentPuzzle,
+      currentQuestion: room.currentQuestion,
+      timeRemaining: room.timeRemaining,
+      bonusActive: false,
+      bonusRemaining: 0,
+      reason
+    });
+
+    broadcastRoomState(roomCode);
+    return true;
+  }
+
+  // ------------------------------------------------
   // ACERTIJO RESUELTO
   // ------------------------------------------------
 
@@ -1666,54 +1714,7 @@ room.players.forEach(
       /*
        * Elegir UN nuevo acertijo.
        */
-      room.currentPuzzle +=
-        1;
-      
-      room.currentQuestion =
-        room.questionPool.shift();
-
-      room.failCount =
-        0;
-
-      room.questionStartedAt =
-        Date.now();
-
-      /*
-       * MUY IMPORTANTE:
-       * el nuevo acertijo todavía no está
-       * resuelto.
-       */
-      room.currentQuestionResolved =
-        false;
-      
-      room.bonusActive =
-        true;
-      
-      room.bonusRemaining =
-        PUZZLE_BONUS;
-
-      console.log(
-        "MULTIJUGADOR: NUEVO ACERTIJO",
-        {
-          puzzle: room.currentPuzzle,
-          question: room.currentQuestion,
-          bonus: room.bonusRemaining
-        }
-      );
-
-      // Evento explícito de avance. Los clientes lo usan para cargar
-      // inmediatamente el siguiente acertijo sin depender del orden
-      // de llegada de varios roomState.
-      io.to(roomCode).emit(
-        "puzzleAdvanced",
-        {
-          currentPuzzle: room.currentPuzzle,
-          currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining,
-          bonusActive: room.bonusActive,
-          bonusRemaining: room.bonusRemaining
-        }
-      );
+      advanceMultiplayerPuzzle(roomCode, room, "solved");
     }
       
 
@@ -1867,54 +1868,7 @@ room.failCount +=
      * para toda la sala.
      */
 
-    room.currentPuzzle +=
-      1;
-
-    room.currentQuestion =
-      room.questionPool.shift();
-
-    room.currentQuestionResolved =
-      false;
-
-    room.failCount =
-      0;
-
-    room.questionStartedAt =
-      Date.now();
-
-
-    /*
-     * No hay bonificación por fallo.
-     */
-    room.bonusActive =
-      false;
-
-    room.bonusRemaining =
-      0;
-
-
-    console.log(
-      "MULTIJUGADOR: TRES FALLOS, NUEVO ACERTIJO",
-      {
-        puzzle:
-          room.currentPuzzle,
-
-        question:
-          room.currentQuestion
-      }
-    );
-
-    io.to(roomCode).emit("puzzleAdvanced", {
-      currentPuzzle: room.currentPuzzle,
-      currentQuestion: room.currentQuestion,
-      timeRemaining: room.timeRemaining,
-      bonusActive: false,
-      bonusRemaining: 0
-    });
-
-    broadcastRoomState(
-      roomCode
-    );
+    advanceMultiplayerPuzzle(roomCode, room, "three-fails");
 
   }
 );
@@ -1996,6 +1950,18 @@ setInterval(
         continue;
       }
 
+
+      // El tiempo de cada acertijo es autoritativo en el servidor.
+      // Así todos los jugadores pasan al siguiente acertijo a los 3 minutos
+      // aunque el navegador del invitado haya perdido un evento.
+      if (
+        room.questionStartedAt &&
+        Date.now() - room.questionStartedAt >= 180000 &&
+        !room.currentQuestionResolved
+      ) {
+        advanceMultiplayerPuzzle(roomCode, room, "timeout");
+        continue;
+      }
 
       /*
        * DURANTE LA BONIFICACIÓN:
