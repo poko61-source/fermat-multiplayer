@@ -665,20 +665,6 @@ io.on("connection", (socket) => {
       ) {
         return;
       }
-
-      if (
-        room.returningToMain ===
-        true
-      ) {
-
-        socket.emit(
-          "navigateToMain",
-          {
-            completedLevel:
-              room.currentLevel
-          }
-        );
-      }
     }
   );
 
@@ -731,31 +717,33 @@ io.on("connection", (socket) => {
       room.lastActivityAt =
         Date.now();
 
-      let sent =
-        0;
+      let sent = 0;
 
-      const notify =
-        () => {
+      const notify = () => {
 
-          sent += 1;
+        sent += 1;
 
-          socket.emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
+        /*
+         * Solo el anfitrión recibe la orden de ir al índice.
+         * Los invitados siguen en la pantalla final del Nivel 1.
+         */
+        socket.emit(
+          "navigateToMain",
+          {
+            completedLevel:
+              room.currentLevel
           }
-        };
+        );
+
+        if (
+          sent < 10
+        ) {
+          setTimeout(
+            notify,
+            400
+          );
+        }
+      };
 
       notify();
 
@@ -1647,15 +1635,15 @@ room.players.forEach(
        * también la orden de navegación al reconectarse.
        */
       /*
-       * Al terminar el Nivel 1, los invitados permanecen
-       * en la pantalla final. Solo el anfitrión irá al índice
-       * global para decidir cuándo comenzar el Nivel 2.
+       * El final del Nivel 1 no navega automáticamente a toda la sala.
+       * Los invitados permanecen en la pantalla final.
+       * Solo el anfitrión podrá solicitar el índice.
        */
       room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
       console.log(
-        "MULTIJUGADOR: VICTORIA -> ANFITRIÓN AL ÍNDICE, INVITADOS EN ESPERA",
+        "MULTIJUGADOR: Nivel 1 terminado; invitados permanecen en espera",
         roomCode
       );
 
