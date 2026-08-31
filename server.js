@@ -1578,8 +1578,27 @@ room.players.forEach(
         }
       );
 
+      /*
+       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
+       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
+       * el índice será el único punto desde el que podrá hacerlo.
+       *
+       * Dejamos la sala en modo de transición para que cualquier
+       * jugador que llegue un poco más tarde al índice reciba
+       * también la orden de navegación al reconectarse.
+       */
+      room.returningToMain = true;
+      room.lastActivityAt = Date.now();
+
+      io.to(roomCode).emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
+
       console.log(
-        "MULTIJUGADOR: VICTORIA",
+        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
         roomCode
       );
 
