@@ -1244,6 +1244,17 @@ io.on("connection", (socket) => {
       socket.playerToken =
         playerToken;
 
+      // Al reanudar Nivel 2, el jugador recupera su asiento lógico.
+      // No debe volver a contarse como una conexión nueva.
+      if (
+        Number(data?.targetLevel || 0) === 2 &&
+        Number(room.currentLevel || 0) === 2 &&
+        room.status === "playing"
+      ) {
+        room.returningToMain = false;
+        room.pendingNavigationLevel = 2;
+      }
+
       if (
         playerToken ===
         room.hostToken
@@ -1258,6 +1269,23 @@ io.on("connection", (socket) => {
 
       room.lastActivityAt =
         Date.now();
+
+      // Confirmación de reanudación + contador actualizado para TODOS.
+      socket.emit(
+        "roomJoined",
+        {
+          roomCode,
+          playerToken,
+          hostToken: room.hostToken
+        }
+      );
+
+      io.to(roomCode).emit(
+        "playersUpdated",
+        {
+          players: room.players.length
+        }
+      );
 
       socket.emit(
         "roomState",
