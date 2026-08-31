@@ -294,6 +294,8 @@ function startNextLevelForRoom(
   room.currentLevel =
     targetLevel;
 
+  // El anfitrión ha pulsado Entrar en el índice: termina la transición
+  // y la sala pasa oficialmente a Nivel 2.
   room.returningToMain =
     false;
 
@@ -725,6 +727,13 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
+      // Nivel 1 queda oficialmente completado antes de volver al índice.
+      // Esto permite que el expediente 02 se desbloquee aunque el navegador
+      // llegue al índice antes de recibir un roomState posterior.
+      if (room.currentLevel === 1 && !room.completedLevels.includes(1)) {
+        room.completedLevels.push(1);
+      }
+
       room.returningToMain =
         true;
 
@@ -1244,17 +1253,6 @@ io.on("connection", (socket) => {
       socket.playerToken =
         playerToken;
 
-      // Al reanudar Nivel 2, el jugador recupera su asiento lógico.
-      // No debe volver a contarse como una conexión nueva.
-      if (
-        Number(data?.targetLevel || 0) === 2 &&
-        Number(room.currentLevel || 0) === 2 &&
-        room.status === "playing"
-      ) {
-        room.returningToMain = false;
-        room.pendingNavigationLevel = 2;
-      }
-
       if (
         playerToken ===
         room.hostToken
@@ -1269,23 +1267,6 @@ io.on("connection", (socket) => {
 
       room.lastActivityAt =
         Date.now();
-
-      // Confirmación de reanudación + contador actualizado para TODOS.
-      socket.emit(
-        "roomJoined",
-        {
-          roomCode,
-          playerToken,
-          hostToken: room.hostToken
-        }
-      );
-
-      io.to(roomCode).emit(
-        "playersUpdated",
-        {
-          players: room.players.length
-        }
-      );
 
       socket.emit(
         "roomState",
