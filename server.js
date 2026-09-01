@@ -711,37 +711,20 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
-      room.returningToMain =
-        true;
+      room.returningToMain = false;
+      room.lastActivityAt = Date.now();
 
-      room.lastActivityAt =
-        Date.now();
-
-      let sent = 0;
-
-      const notify = () => {
-
-        sent += 1;
-
-        socket.emit(
-          "navigateToMain",
-          {
-            completedLevel:
-              room.currentLevel
-          }
-        );
-
-        if (
-          sent < 10
-        ) {
-          setTimeout(
-            notify,
-            400
-          );
+      /*
+       * Solo el anfitrión vuelve al índice.
+       * Los invitados permanecen en la pantalla final del Nivel 1.
+       */
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel:
+            room.currentLevel
         }
-      };
-
-      notify();
+      );
 
       /*
        * Confirmación directa al socket que lanzó la orden.
