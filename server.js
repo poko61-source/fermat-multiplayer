@@ -665,6 +665,20 @@ io.on("connection", (socket) => {
       ) {
         return;
       }
+
+      if (
+        room.returningToMain ===
+        true
+      ) {
+
+        socket.emit(
+          "navigateToMain",
+          {
+            completedLevel:
+              room.currentLevel
+          }
+        );
+      }
     }
   );
 
@@ -711,20 +725,39 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
-      room.returningToMain = false;
-      room.lastActivityAt = Date.now();
+      room.returningToMain =
+        true;
 
-      /*
-       * Solo el anfitrión vuelve al índice.
-       * Los invitados permanecen en la pantalla final del Nivel 1.
-       */
-      socket.emit(
-        "navigateToMain",
-        {
-          completedLevel:
-            room.currentLevel
-        }
-      );
+      room.lastActivityAt =
+        Date.now();
+
+      let sent =
+        0;
+
+      const notify =
+        () => {
+
+          sent += 1;
+
+          io.to(roomCode).emit(
+            "navigateToMain",
+            {
+              completedLevel:
+                room.currentLevel
+            }
+          );
+
+          if (
+            sent < 10
+          ) {
+            setTimeout(
+              notify,
+              400
+            );
+          }
+        };
+
+      notify();
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -938,15 +971,38 @@ io.on("connection", (socket) => {
         }
       );
 
-      // El socket temporal del anfitrión puede no pertenecer todavía
-      // al room. Le enviamos también la orden directamente.
+      /*
+       * El anfitrión puede estar usando un socket temporal que todavía
+       * no pertenece a la sala. Por eso enviamos la orden en ambos sitios:
+       *
+       * 1) a toda la sala -> incluye al invitado
+       * 2) directamente al socket del anfitrión -> garantiza la transición
+       */
+      io.to(roomCode).emit(
+        "navigateToLevel",
+        {
+          level:
+            targetLevel,
+          currentPuzzle:
+            room.currentPuzzle,
+          currentQuestion:
+            room.currentQuestion,
+          timeRemaining:
+            room.timeRemaining
+        }
+      );
+
       socket.emit(
         "navigateToLevel",
         {
-          level: targetLevel,
-          currentPuzzle: room.currentPuzzle,
-          currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining
+          level:
+            targetLevel,
+          currentPuzzle:
+            room.currentPuzzle,
+          currentQuestion:
+            room.currentQuestion,
+          timeRemaining:
+            room.timeRemaining
         }
       );
     }
@@ -1613,11 +1669,18 @@ room.players.forEach(
        * jugador que llegue un poco más tarde al índice reciba
        * también la orden de navegación al reconectarse.
        */
-      room.returningToMain = false;
+      room.returningToMain = true;
       room.lastActivityAt = Date.now();
 
+      io.to(roomCode).emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
+
       console.log(
-        "MULTIJUGADOR: Nivel 1 terminado; invitados permanecen en la pantalla final",
+        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
         roomCode
       );
 
