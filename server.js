@@ -18,6 +18,7 @@ const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
 const PUZZLE_BONUS = 30;
+const QUESTION_TIME = 3 * 60;
 const POINTS_PER_SOLVED = 500;
 const POINTS_PER_FAIL = 50;
 const ESCAPE_BONUS = 500;
@@ -34,6 +35,55 @@ app.get("/", (req, res) => {
     "Servidor multijugador de La Habitación de Fermat funcionando."
   );
 });
+
+app.get(
+  "/api/room-state/:roomCode",
+  (req, res) => {
+
+    const roomCode =
+      String(
+        req.params.roomCode || ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const room =
+      rooms.get(
+        roomCode
+      );
+
+    if (!room) {
+      return res
+        .status(404)
+        .json(
+          {
+            ok:
+              false
+          }
+        );
+    }
+
+    res.json(
+      {
+        ok:
+          true,
+        status:
+          room.status,
+        currentLevel:
+          room.currentLevel,
+        completedLevels:
+          room.completedLevels || [],
+        currentPuzzle:
+          room.currentPuzzle,
+        currentQuestion:
+          room.currentQuestion,
+        timeRemaining:
+          room.timeRemaining
+      }
+    );
+  }
+);
+
 
 app.get("/test", (req, res) => {
   res.sendFile(
@@ -110,6 +160,7 @@ function createGameState() {
     hostToken: null,
     hostSocketId: null,
     lastActivityAt: Date.now(),
+    questionStartedAt: 0,
     questionPool: [],
     failCount: 0,
 
@@ -236,6 +287,7 @@ function startNextLevelIfReady(roomCode) {
   room.currentPuzzle = 1;
   room.questionPool = createQuestionPool();
   room.currentQuestion = room.questionPool.shift();
+  room.questionStartedAt = Date.now();
   room.currentQuestionResolved = false;
   room.puzzlesSolved = 0;
   room.failCount = 0;
@@ -393,6 +445,9 @@ function startNextLevelForRoom(
 
   room.currentQuestion =
     room.questionPool.shift();
+
+  room.questionStartedAt =
+    Date.now();
 
   room.currentQuestionResolved =
     false;
@@ -742,11 +797,7 @@ io.on("connection", (socket) => {
 
       if (
         room.returningToMain ===
-          true &&
-        Number(
-          room.currentLevel ||
-            1
-        ) === 1
+        true
       ) {
 
         socket.emit(
@@ -804,23 +855,40 @@ io.on("connection", (socket) => {
        * navegador pierda el evento durante la navegación.
        */
       room.returningToMain =
-        false;
+        true;
 
       room.lastActivityAt =
-        Date.now();      
-      /*
-       * Solo el anfitrión abandona la pantalla final.
-       * El invitado permanece esperando aquí.
-       */
-      socket.emit(
-        "navigateToMain",
-        {
-          completedLevel:
-            room.currentLevel
-        }
-      );
+        Date.now();
 
-/*
+      let sent =
+        0;
+
+      const notify =
+        () => {
+
+          sent += 1;
+
+          io.to(roomCode).emit(
+            "navigateToMain",
+            {
+              completedLevel:
+                room.currentLevel
+            }
+          );
+
+          if (
+            sent < 10
+          ) {
+            setTimeout(
+              notify,
+              400
+            );
+          }
+        };
+
+      notify();
+
+      /*
        * Confirmación directa al socket que lanzó la orden.
        * Esto permite al anfitrión cambiar de página incluso si
        * su socket original se cerró al mostrar la victoria.
@@ -1499,6 +1567,8 @@ io.on("connection", (socket) => {
       room.timeRemaining =
         GAME_DURATION;
 
+      room.questionStartedAt =
+        Date.now();
 
       room.bonusActive =
         false;
@@ -2051,6 +2121,64 @@ setInterval(
        *
        * El tiempo global NO disminuye.
        */
+
+      /*
+       * Cada acertijo dura 3 minutos.
+       * El servidor hace avanzar a toda la sala cuando se agota,
+       * de modo que anfitrión e invitado reciben el mismo acertijo.
+       */
+      if (
+        !room.bonusActive &&
+        room.questionStartedAt &&
+        Date.now() -
+          room.questionStartedAt >=
+          QUESTION_TIME * 1000
+      ) {
+
+        const nextQuestion =
+          room.questionPool.shift();
+
+        if (
+          nextQuestion
+        ) {
+
+          room.currentPuzzle +=
+            1;
+
+          room.currentQuestion =
+            nextQuestion;
+
+          room.currentQuestionResolved =
+            false;
+
+          room.failCount =
+            0;
+
+          room.questionStartedAt =
+            Date.now();
+
+          room.bonusActive =
+            false;
+
+          room.bonusRemaining =
+            0;
+
+          console.log(
+            "MULTIJUGADOR: tiempo de acertijo agotado -> siguiente",
+            {
+              roomCode,
+              puzzle:
+                room.currentPuzzle,
+              question:
+                room.currentQuestion
+            }
+          );
+
+          broadcastRoomState(
+            roomCode
+          );
+        }
+      }
 
       if (
         room.bonusActive
