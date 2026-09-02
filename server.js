@@ -35,56 +35,6 @@ app.get("/", (req, res) => {
   );
 });
 
-app.get(
-  "/api/room-state/:roomCode",
-  (req, res) => {
-
-    const roomCode =
-      String(
-        req.params.roomCode ||
-        ""
-      )
-        .trim()
-        .toUpperCase();
-
-    const room =
-      rooms.get(
-        roomCode
-      );
-
-    if (!room) {
-      return res
-        .status(404)
-        .json(
-          {
-            ok: false,
-            message:
-              "La sala no existe."
-          }
-        );
-    }
-
-    res.json(
-      {
-        ok: true,
-        status:
-          room.status,
-        currentLevel:
-          room.currentLevel,
-        completedLevels:
-          room.completedLevels || [],
-        currentPuzzle:
-          room.currentPuzzle,
-        currentQuestion:
-          room.currentQuestion,
-        timeRemaining:
-          room.timeRemaining
-      }
-    );
-  }
-);
-
-
 app.get("/test", (req, res) => {
   res.sendFile(
     new URL("./test.html", import.meta.url).pathname
@@ -375,15 +325,6 @@ function broadcastNextLevelNavigation(
         );
       }
     }
-  );
-
-
-
-  io.to(
-    roomCode
-  ).emit(
-    "navigateToLevel",
-    payload
   );
 
   console.log(
@@ -801,7 +742,11 @@ io.on("connection", (socket) => {
 
       if (
         room.returningToMain ===
-        true
+          true &&
+        Number(
+          room.currentLevel ||
+            1
+        ) === 1
       ) {
 
         socket.emit(
@@ -859,40 +804,23 @@ io.on("connection", (socket) => {
        * navegador pierda el evento durante la navegación.
        */
       room.returningToMain =
-        true;
+        false;
 
       room.lastActivityAt =
-        Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
-
+        Date.now();      
       /*
+       * Solo el anfitrión abandona la pantalla final.
+       * El invitado permanece esperando aquí.
+       */
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
+
+/*
        * Confirmación directa al socket que lanzó la orden.
        * Esto permite al anfitrión cambiar de página incluso si
        * su socket original se cerró al mostrar la victoria.
