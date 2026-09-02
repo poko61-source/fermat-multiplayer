@@ -600,45 +600,6 @@ io.on("connection", (socket) => {
 
 
   // ------------------------------------------------
-  // OBSERVADOR TEMPORAL DE NIVEL (SIN CAMBIAR LA IDENTIDAD)
-  // ------------------------------------------------
-  socket.on(
-    "watchRoomLevel",
-    (data = {}) => {
-      const roomCode =
-        String(
-          data?.roomCode || ""
-        ).trim().toUpperCase();
-
-      const room =
-        rooms.get(roomCode);
-
-      if (!room) {
-        socket.emit(
-          "roomLevel",
-          {
-            status: "missing",
-            currentLevel: 0
-          }
-        );
-        return;
-      }
-
-      socket.emit(
-        "roomLevel",
-        {
-          status: room.status,
-          currentLevel: room.currentLevel,
-          completedLevels: room.completedLevels,
-          currentPuzzle: room.currentPuzzle,
-          currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining
-        }
-      );
-    }
-  );
-
-  // ------------------------------------------------
   // CREAR SALA
   // ------------------------------------------------
 
@@ -931,10 +892,38 @@ io.on("connection", (socket) => {
        * navegador pierda el evento durante la navegación.
        */
       room.returningToMain =
-        false;
+        true;
 
       room.lastActivityAt =
         Date.now();
+
+      let sent =
+        0;
+
+      const notify =
+        () => {
+
+          sent += 1;
+
+          io.to(roomCode).emit(
+            "navigateToMain",
+            {
+              completedLevel:
+                room.currentLevel
+            }
+          );
+
+          if (
+            sent < 10
+          ) {
+            setTimeout(
+              notify,
+              400
+            );
+          }
+        };
+
+      notify();
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -1187,6 +1176,42 @@ io.on("connection", (socket) => {
         return;
       }
 
+      /*
+       * Señal autoritativa de entrada en Nivel 2.
+       *
+       * El anfitrión puede haber llegado a Nivel 2 después de una
+       * navegación en la que el evento hostSelectLevel se perdió.
+       * Al cargar Nivel 2, resumeRoom lleva targetLevel=2.
+       * Si esa identidad es la del anfitrión y la sala sigue en
+       * victoria de Nivel 1, arrancamos aquí el Nivel 2 para toda
+       * la sala. El invitado nunca puede activar esta transición.
+       */
+      const targetLevel =
+        Number(data?.targetLevel || 0);
+
+      if (
+        playerToken === room.hostToken &&
+        room.status === "victory" &&
+        targetLevel === 2 &&
+        Number(room.currentLevel || 1) === 1
+      ) {
+        const started =
+          startNextLevelForRoom(
+            roomCode,
+            2,
+            socket.id
+          );
+
+        console.log(
+          "HOST: resumeRoom Nivel 2",
+          {
+            roomCode,
+            playerToken,
+            started
+          }
+        );
+      }
+
       const oldSocketId =
         room.playerTokens[playerToken];
 
@@ -1377,40 +1402,6 @@ io.on("connection", (socket) => {
         !playerToken
       ) {
         return;
-      }
-
-      const targetLevel =
-        Number(data?.targetLevel || 0);
-
-      /*
-       * Si el anfitrión ya ha llegado directamente a Nivel 2
-       * (por ejemplo, tras una navegación que no conservó el
-       * evento hostSelectLevel), su resumeRoom también sirve
-       * como confirmación autoritativa para arrancar el nivel.
-       * El invitado nunca puede activar esta transición.
-       */
-      if (
-        playerToken === room.hostToken &&
-        room.status === "victory" &&
-        targetLevel === 2 &&
-        Number(room.currentLevel || 1) === 1
-      ) {
-        const started =
-          startNextLevelForRoom(
-            roomCode,
-            2,
-            socket.id
-          );
-
-        if (started) {
-          console.log(
-            "HOST: resumeRoom confirma Nivel 2 -> sala iniciada",
-            {
-              roomCode,
-              playerToken
-            }
-          );
-        }
       }
 
       const oldSocketId =
@@ -1859,7 +1850,6 @@ room.players.forEach(
                 room.hostToken,
 
               isHost:
-                playerSocketId === room.hostSocketId ||
                 (
                   io.sockets.sockets.get(
                     playerSocketId
