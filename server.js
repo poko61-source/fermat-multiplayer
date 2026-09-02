@@ -971,38 +971,15 @@ io.on("connection", (socket) => {
         }
       );
 
-      /*
-       * El anfitrión puede estar usando un socket temporal que todavía
-       * no pertenece a la sala. Por eso enviamos la orden en ambos sitios:
-       *
-       * 1) a toda la sala -> incluye al invitado
-       * 2) directamente al socket del anfitrión -> garantiza la transición
-       */
-      io.to(roomCode).emit(
-        "navigateToLevel",
-        {
-          level:
-            targetLevel,
-          currentPuzzle:
-            room.currentPuzzle,
-          currentQuestion:
-            room.currentQuestion,
-          timeRemaining:
-            room.timeRemaining
-        }
-      );
-
+      // El socket temporal del anfitrión puede no pertenecer todavía
+      // al room. Le enviamos también la orden directamente.
       socket.emit(
         "navigateToLevel",
         {
-          level:
-            targetLevel,
-          currentPuzzle:
-            room.currentPuzzle,
-          currentQuestion:
-            room.currentQuestion,
-          timeRemaining:
-            room.timeRemaining
+          level: targetLevel,
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          timeRemaining: room.timeRemaining
         }
       );
     }
@@ -1659,32 +1636,21 @@ room.players.forEach(
           );
         }
       );
-
       /*
-       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
-       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
-       * el índice será el único punto desde el que podrá hacerlo.
-       *
-       * Dejamos la sala en modo de transición para que cualquier
-       * jugador que llegue un poco más tarde al índice reciba
-       * también la orden de navegación al reconectarse.
+       * La victoria solo muestra la pantalla final.
+       * Nadie vuelve al índice automáticamente.
+       * La transición se realizará cuando el anfitrión pulse
+       * el botón y ejecute hostReturnToMain().
        */
-      room.returningToMain = true;
+      room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
-      io.to(roomCode).emit(
-        "navigateToMain",
-        {
-          completedLevel: room.currentLevel
-        }
-      );
-
       console.log(
-        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
+        "MULTIJUGADOR: VICTORIA -> ESPERANDO AL ANFITRIÓN",
         roomCode
       );
 
-    } else {
+} else {
 
       /*
        * Elegir UN nuevo acertijo.
