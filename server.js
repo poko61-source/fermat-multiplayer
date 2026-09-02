@@ -327,6 +327,19 @@ function broadcastNextLevelNavigation(
     }
   );
 
+
+
+  /*
+   * Respaldo por room: cualquier invitado que mantenga su
+   * pertenencia a la sala recibe la transición.
+   */
+  io.to(
+    roomCode
+  ).emit(
+    "navigateToLevel",
+    payload
+  );
+
   console.log(
     "MULTIJUGADOR: navigateToLevel enviado",
     {
@@ -353,14 +366,6 @@ function startNextLevelForRoom(
 ) {
 
   const room =
-
-  if (
-    room
-  ) {
-    room.returningToMain =
-      false;
-  }
-
     rooms.get(
       roomCode
     );
@@ -750,7 +755,11 @@ io.on("connection", (socket) => {
 
       if (
         room.returningToMain ===
-        true
+          true &&
+        Number(
+          room.currentLevel ||
+            1
+        ) === 1
       ) {
 
         socket.emit(
@@ -807,13 +816,14 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
-      room.returningToMain = false;
+      room.returningToMain =
+        false;
 
       room.lastActivityAt =
         Date.now();
       /*
        * Solo el anfitrión vuelve al índice.
-       * El invitado permanece en la pantalla final de Nivel 1.
+       * El invitado permanece en la pantalla final.
        */
       socket.emit(
         "navigateToMain",
@@ -1033,7 +1043,8 @@ io.on("connection", (socket) => {
           level:
             targetLevel
         }
-      );}
+      );
+}
   );
 
 
@@ -1167,10 +1178,7 @@ io.on("connection", (socket) => {
 
       if (
         room.returningToMain ===
-          true &&
-        Number(
-          room.currentLevel || 1
-        ) === 1
+        true
       ) {
 
         socket.emit(
