@@ -353,6 +353,14 @@ function startNextLevelForRoom(
 ) {
 
   const room =
+
+  if (
+    room
+  ) {
+    room.returningToMain =
+      false;
+  }
+
     rooms.get(
       roomCode
     );
@@ -799,41 +807,23 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
-      room.returningToMain =
-        true;
+      room.returningToMain = false;
 
       room.lastActivityAt =
         Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
-
       /*
+       * Solo el anfitrión vuelve al índice.
+       * El invitado permanece en la pantalla final de Nivel 1.
+       */
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
+
+/*
        * Confirmación directa al socket que lanzó la orden.
        * Esto permite al anfitrión cambiar de página incluso si
        * su socket original se cerró al mostrar la victoria.
@@ -1043,20 +1033,7 @@ io.on("connection", (socket) => {
           level:
             targetLevel
         }
-      );
-
-      // El socket temporal del anfitrión puede no pertenecer todavía
-      // al room. Le enviamos también la orden directamente.
-      socket.emit(
-        "navigateToLevel",
-        {
-          level: targetLevel,
-          currentPuzzle: room.currentPuzzle,
-          currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining
-        }
-      );
-    }
+      );}
   );
 
 
@@ -1190,7 +1167,10 @@ io.on("connection", (socket) => {
 
       if (
         room.returningToMain ===
-        true
+          true &&
+        Number(
+          room.currentLevel || 1
+        ) === 1
       ) {
 
         socket.emit(
