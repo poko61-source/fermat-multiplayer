@@ -41,7 +41,8 @@ app.get(
 
     const roomCode =
       String(
-        req.params.roomCode || ""
+        req.params.roomCode ||
+        ""
       )
         .trim()
         .toUpperCase();
@@ -52,14 +53,15 @@ app.get(
       );
 
     if (!room) {
-      res.status(404).json(
-        {
-          ok: false,
-          message:
-            "La sala no existe."
-        }
-      );
-      return;
+      return res
+        .status(404)
+        .json(
+          {
+            ok: false,
+            message:
+              "La sala no existe."
+          }
+        );
     }
 
     res.json(
@@ -70,15 +72,13 @@ app.get(
         currentLevel:
           room.currentLevel,
         completedLevels:
-          room.completedLevels,
+          room.completedLevels || [],
         currentPuzzle:
           room.currentPuzzle,
         currentQuestion:
           room.currentQuestion,
         timeRemaining:
-          room.timeRemaining,
-        hostToken:
-          room.hostToken
+          room.timeRemaining
       }
     );
   }
