@@ -261,6 +261,88 @@ function startNextLevelIfReady(roomCode) {
 }
 
 // --------------------------------------------------
+// NAVEGACIÓN ROBUSTA DE TODA LA SALA
+// --------------------------------------------------
+function broadcastNextLevelNavigation(
+  roomCode,
+  room
+) {
+
+  if (!room) return;
+
+  const payload = {
+    level:
+      room.currentLevel,
+    currentPuzzle:
+      room.currentPuzzle,
+    currentQuestion:
+      room.currentQuestion,
+    timeRemaining:
+      room.timeRemaining
+  };
+
+  const socketIds =
+    new Set();
+
+  Object.values(
+    room.playerTokens || {}
+  ).forEach(
+    socketId => {
+      if (socketId) {
+        socketIds.add(
+          socketId
+        );
+      }
+    }
+  );
+
+  (room.players || []).forEach(
+    socketId => {
+      if (socketId) {
+        socketIds.add(
+          socketId
+        );
+      }
+    }
+  );
+
+  if (room.hostSocketId) {
+    socketIds.add(
+      room.hostSocketId
+    );
+  }
+
+  socketIds.forEach(
+    socketId => {
+      if (
+        io.sockets.sockets.has(
+          socketId
+        )
+      ) {
+        io.to(socketId).emit(
+          "navigateToLevel",
+          payload
+        );
+      }
+    }
+  );
+
+  console.log(
+    "MULTIJUGADOR: navigateToLevel enviado",
+    {
+      roomCode,
+      level:
+        room.currentLevel,
+      sockets:
+        Array.from(
+          socketIds
+        )
+    }
+  );
+}
+
+
+// --------------------------------------------------
 // INICIAR SIGUIENTE NIVEL DIRECTAMENTE EN MULTIJUGADOR
 // --------------------------------------------------
 
@@ -355,54 +437,46 @@ function startNextLevelForRoom(
     roomCode
   );
 
-  // Enviamos la navegación tanto por room como por socket individual.
-  // Así no dependemos de que el socket del invitado haya conservado
-  // correctamente su pertenencia al room durante el cambio de página.
-  const navigationPayload = {
-    level: targetLevel,
-    currentPuzzle: room.currentPuzzle,
-    currentQuestion: room.currentQuestion,
-    timeRemaining: room.timeRemaining
-  };
-
-  io.to(roomCode).emit(
-    "navigateToLevel",
-    navigationPayload
+  broadcastNextLevelNavigation(
+    roomCode,
+    room
   );
 
-  // Repetir brevemente la orden cubre la ventana de reconexión
-  // durante el cambio de página. En Nivel 2 los eventos duplicados
-  // son inocuos porque solo vuelven a cargar la misma pregunta.
-  [500, 1500, 3000, 5000].forEach(delay => {
-    setTimeout(() => {
-      const currentRoom = rooms.get(roomCode);
-      if (!currentRoom ||
-          currentRoom.currentLevel !== targetLevel ||
-          currentRoom.status !== "playing") return;
+  /*
+   * Repetimos la orden durante unos segundos para cubrir
+   * la reconexión del invitado al cambiar de documento.
+   */
+  [500, 1500, 3000, 5000].forEach(
+    delay => {
+      setTimeout(
+        () => {
 
-      const payload = {
-        level: targetLevel,
-        currentPuzzle: currentRoom.currentPuzzle,
-        currentQuestion: currentRoom.currentQuestion,
-        timeRemaining: currentRoom.timeRemaining
-      };
+          const currentRoom =
+            rooms.get(
+              roomCode
+            );
 
-      currentRoom.players.forEach(playerSocketId => {
-        if (io.sockets.sockets.has(playerSocketId)) {
-          io.to(playerSocketId).emit("navigateToLevel", payload);
-        }
-      });
-    }, delay);
-  });
+          if (
+            !currentRoom ||
+            currentRoom.currentLevel !==
+              targetLevel ||
+            currentRoom.status !==
+              "playing"
+          ) {
+            return;
+          }
 
-  room.players.forEach(playerSocketId => {
-    if (io.sockets.sockets.has(playerSocketId)) {
-      io.to(playerSocketId).emit(
-        "navigateToLevel",
-        navigationPayload
+          broadcastNextLevelNavigation(
+            roomCode,
+            currentRoom
+          );
+
+        },
+        delay
       );
     }
-  });
+  );
+
 
   console.log(
     "MULTIJUGADOR: salto directo al siguiente nivel",
@@ -1092,6 +1166,29 @@ io.on("connection", (socket) => {
         Date.now();
 
       if (
+        Number(
+          room.currentLevel || 1
+        ) >= 2 &&
+        room.status ===
+          "playing"
+      ) {
+
+        socket.emit(
+          "navigateToLevel",
+          {
+            level:
+              room.currentLevel,
+            currentPuzzle:
+              room.currentPuzzle,
+            currentQuestion:
+              room.currentQuestion,
+            timeRemaining:
+              room.timeRemaining
+          }
+        );
+      }
+
+      if (
         room.returningToMain ===
         true
       ) {
@@ -1636,14 +1733,9 @@ room.players.forEach(
           );
         }
       );
-
       /*
-       * La victoria NO cambia de página automáticamente.
-       *
-       * Ambos jugadores permanecen en la pantalla final del Nivel 1.
-       * El anfitrión decidirá cuándo continuar pulsando el botón
-       * correspondiente. Solo entonces hostReturnToMain() realizará
-       * la navegación al índice.
+       * La victoria solo muestra la pantalla final.
+       * No navegamos al índice automáticamente.
        */
       room.returningToMain = false;
       room.lastActivityAt = Date.now();
@@ -1652,8 +1744,7 @@ room.players.forEach(
         "MULTIJUGADOR: VICTORIA -> ESPERANDO AL ANFITRIÓN",
         roomCode
       );
-
-    } else {
+} else {
 
       /*
        * Elegir UN nuevo acertijo.
