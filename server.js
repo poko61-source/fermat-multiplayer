@@ -419,12 +419,6 @@ function broadcastNextLevelNavigation(
     }
   );
 
-  // Incluye sockets de observación que no sustituyen a ningún jugador.
-  io.to(roomCode).emit(
-    "navigateToLevel",
-    payload
-  );
-
   console.log(
     "MULTIJUGADOR: navigateToLevel enviado",
     {
@@ -893,13 +887,9 @@ io.on("connection", (socket) => {
       }
 
       /*
-       * La vuelta al índice es EXCLUSIVA del anfitrión.
-       * No emitimos navigateToMain a la sala porque el invitado
-       * debe permanecer en la pantalla final del Nivel 1.
-       *
-       * Tampoco dejamos returningToMain activo: ese estado sería
-       * interpretado por un invitado como una orden pendiente de
-       * volver al índice.
+       * Marcamos que la sala está en la transición al
+       * índice. Este estado queda almacenado aunque un
+       * navegador pierda el evento durante la navegación.
        */
       room.returningToMain =
         false;
@@ -1461,67 +1451,6 @@ io.on("connection", (socket) => {
     }
   );
 
-
-  socket.on(
-    "watchRoom",
-    (data = {}) => {
-      const roomCode =
-        String(
-          data?.roomCode || ""
-        ).trim().toUpperCase();
-
-      const playerToken =
-        String(
-          data?.playerToken || ""
-        ).trim();
-
-      const room =
-        rooms.get(roomCode);
-
-      if (
-        !room ||
-        !playerToken ||
-        !room.playerTokens ||
-        !room.playerTokens[playerToken]
-      ) {
-        socket.emit(
-          "watchRoomError",
-          { message: "Sala o identidad no válida." }
-        );
-        return;
-      }
-
-      // Este socket solo observa la transición.
-      // NO sustituye room.playerTokens ni room.players.
-      socket.roomCode = roomCode;
-      socket.watchToken = playerToken;
-      socket.join(roomCode);
-
-      socket.emit(
-        "roomState",
-        {
-          ...getRoomState(room),
-          isHost: playerToken === room.hostToken
-        }
-      );
-
-      if (
-        Number(room.pendingNavigationLevel || 0) === 2 &&
-        Number(room.currentLevel || 0) === 2 &&
-        room.status === "playing"
-      ) {
-        socket.emit(
-          "navigateToLevel",
-          {
-            level: 2,
-            currentPuzzle: room.currentPuzzle,
-            currentQuestion: room.currentQuestion,
-            timeRemaining: room.timeRemaining
-          }
-        );
-      }
-    }
-  );
 
   socket.on(
     "continueLevel",
