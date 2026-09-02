@@ -1379,6 +1379,40 @@ io.on("connection", (socket) => {
         return;
       }
 
+      const targetLevel =
+        Number(data?.targetLevel || 0);
+
+      /*
+       * Si el anfitrión ya ha llegado directamente a Nivel 2
+       * (por ejemplo, tras una navegación que no conservó el
+       * evento hostSelectLevel), su resumeRoom también sirve
+       * como confirmación autoritativa para arrancar el nivel.
+       * El invitado nunca puede activar esta transición.
+       */
+      if (
+        playerToken === room.hostToken &&
+        room.status === "victory" &&
+        targetLevel === 2 &&
+        Number(room.currentLevel || 1) === 1
+      ) {
+        const started =
+          startNextLevelForRoom(
+            roomCode,
+            2,
+            socket.id
+          );
+
+        if (started) {
+          console.log(
+            "HOST: resumeRoom confirma Nivel 2 -> sala iniciada",
+            {
+              roomCode,
+              playerToken
+            }
+          );
+        }
+      }
+
       const oldSocketId =
         room.playerTokens[playerToken];
 
