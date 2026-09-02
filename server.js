@@ -29,6 +29,16 @@ app.use(
       "Content-Type"
     );
 
+    res.setHeader(
+      "Vary",
+      "Origin"
+    );
+
+    res.setHeader(
+      "Access-Control-Allow-Private-Network",
+      "true"
+    );
+
     if (
       req.method ===
       "OPTIONS"
