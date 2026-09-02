@@ -893,43 +893,19 @@ io.on("connection", (socket) => {
       }
 
       /*
-       * Marcamos que la sala está en la transición al
-       * índice. Este estado queda almacenado aunque un
-       * navegador pierda el evento durante la navegación.
+       * La vuelta al índice es EXCLUSIVA del anfitrión.
+       * No emitimos navigateToMain a la sala porque el invitado
+       * debe permanecer en la pantalla final del Nivel 1.
+       *
+       * Tampoco dejamos returningToMain activo: ese estado sería
+       * interpretado por un invitado como una orden pendiente de
+       * volver al índice.
        */
       room.returningToMain =
-        true;
+        false;
 
       room.lastActivityAt =
         Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
 
       /*
        * Confirmación directa al socket que lanzó la orden.
