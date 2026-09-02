@@ -600,6 +600,45 @@ io.on("connection", (socket) => {
 
 
   // ------------------------------------------------
+  // OBSERVADOR TEMPORAL DE NIVEL (SIN CAMBIAR LA IDENTIDAD)
+  // ------------------------------------------------
+  socket.on(
+    "watchRoomLevel",
+    (data = {}) => {
+      const roomCode =
+        String(
+          data?.roomCode || ""
+        ).trim().toUpperCase();
+
+      const room =
+        rooms.get(roomCode);
+
+      if (!room) {
+        socket.emit(
+          "roomLevel",
+          {
+            status: "missing",
+            currentLevel: 0
+          }
+        );
+        return;
+      }
+
+      socket.emit(
+        "roomLevel",
+        {
+          status: room.status,
+          currentLevel: room.currentLevel,
+          completedLevels: room.completedLevels,
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          timeRemaining: room.timeRemaining
+        }
+      );
+    }
+  );
+
+  // ------------------------------------------------
   // CREAR SALA
   // ------------------------------------------------
 
