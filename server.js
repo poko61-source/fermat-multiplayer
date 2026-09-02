@@ -419,6 +419,15 @@ function broadcastNextLevelNavigation(
     }
   );
 
+
+
+  io.to(
+    roomCode
+  ).emit(
+    "navigateToLevel",
+    payload
+  );
+
   console.log(
     "MULTIJUGADOR: navigateToLevel enviado",
     {
@@ -538,7 +547,7 @@ function startNextLevelForRoom(
    * Repetimos la orden durante unos segundos para cubrir
    * la reconexión del invitado al cambiar de documento.
    */
-  [500, 1500, 3000, 5000].forEach(
+  [500, 1000, 2000, 3000, 5000, 8000].forEach(
     delay => {
       setTimeout(
         () => {
@@ -834,7 +843,11 @@ io.on("connection", (socket) => {
 
       if (
         room.returningToMain ===
-        true
+          true &&
+        Number(
+          room.currentLevel ||
+            1
+        ) === 1
       ) {
 
         socket.emit(
@@ -892,40 +905,23 @@ io.on("connection", (socket) => {
        * navegador pierda el evento durante la navegación.
        */
       room.returningToMain =
-        true;
+        false;
 
       room.lastActivityAt =
         Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
-
       /*
+       * SOLO el anfitrión vuelve al índice.
+       * El invitado permanece en la pantalla final.
+       */
+      socket.emit(
+        "hostReturnToMainAccepted",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
+
+/*
        * Confirmación directa al socket que lanzó la orden.
        * Esto permite al anfitrión cambiar de página incluso si
        * su socket original se cerró al mostrar la victoria.
@@ -1900,6 +1896,97 @@ room.players.forEach(
   // ------------------------------------------------
 // FALLO DE ACERTIJO
 // ------------------------------------------------
+
+
+socket.on(
+  "questionTimeout",
+  (data = {}) => {
+
+    const roomCode =
+      socket.roomCode;
+
+    const room =
+      rooms.get(
+        roomCode
+      );
+
+    if (
+      !room ||
+      room.status !==
+        "playing"
+    ) {
+      return;
+    }
+
+    const timedOutQuestion =
+      Number(
+        data?.question
+      );
+
+    /*
+     * El timeout tiene que corresponder al acertijo
+     * que realmente está activo en la sala.
+     */
+    if (
+      timedOutQuestion !==
+      Number(
+        room.currentQuestion
+      ) ||
+      room.currentQuestionResolved
+    ) {
+      return;
+    }
+
+    const nextQuestion =
+      room.questionPool.shift();
+
+    if (
+      !nextQuestion
+    ) {
+      return;
+    }
+
+    room.currentPuzzle +=
+      1;
+
+    room.currentQuestion =
+      nextQuestion;
+
+    room.currentQuestionResolved =
+      false;
+
+    room.failCount =
+      0;
+
+    room.questionStartedAt =
+      Date.now();
+
+    room.bonusActive =
+      false;
+
+    room.bonusRemaining =
+      0;
+
+    room.lastActivityAt =
+      Date.now();
+
+    console.log(
+      "MULTIJUGADOR: TIMEOUT -> SIGUIENTE ACERTIJO",
+      {
+        roomCode,
+        puzzle:
+          room.currentPuzzle,
+        question:
+          room.currentQuestion
+      }
+    );
+
+    broadcastRoomState(
+      roomCode
+    );
+  }
+);
+
 
 socket.on(
   "questionFailed",
