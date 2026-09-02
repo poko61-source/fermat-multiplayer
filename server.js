@@ -1859,6 +1859,7 @@ room.players.forEach(
                 room.hostToken,
 
               isHost:
+                playerSocketId === room.hostSocketId ||
                 (
                   io.sockets.sockets.get(
                     playerSocketId
