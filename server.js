@@ -196,30 +196,6 @@ function broadcastRoomState(roomCode) {
       );
     }
   );
-
-  // Los watchers del invitado NO forman parte de room.players.
-  // Aun así deben recibir cada cambio de estado para poder detectar
-  // el salto del anfitrión a Nivel 2 sin convertirse en un tercer jugador.
-  io.sockets.sockets.forEach(
-    watcherSocket => {
-      if (
-        watcherSocket.isRoomWatcher === true &&
-        watcherSocket.watchRoomCode === roomCode
-      ) {
-        watcherSocket.emit(
-          "roomWatchState",
-          {
-            status: room.status,
-            currentLevel: room.currentLevel,
-            completedLevels: room.completedLevels,
-            currentPuzzle: room.currentPuzzle,
-            currentQuestion: room.currentQuestion,
-            timeRemaining: room.timeRemaining
-          }
-        );
-      }
-    }
-  );
 }
 
 
@@ -710,57 +686,102 @@ io.on("connection", (socket) => {
   socket.on(
     "hostReturnToMain",
     (data = {}) => {
+
       const roomCode =
         socket.roomCode ||
-        String(data?.roomCode || "").trim().toUpperCase();
-      const playerToken =
-        String(data?.playerToken || socket.playerToken || "").trim();
-      const room = rooms.get(roomCode);
+        String(
+          data?.roomCode || ""
+        ).trim().toUpperCase();
 
-      if (!room || playerToken !== room.hostToken) {
-        socket.emit("hostReturnToMainError", {
-          message: "La orden solo puede ejecutarla el anfitrión."
-        });
+      const playerToken =
+        String(
+          data?.playerToken ||
+          socket.playerToken ||
+          ""
+        ).trim();
+
+      const room =
+        rooms.get(
+          roomCode
+        );
+
+      if (
+        !room ||
+        playerToken !==
+          room.hostToken
+      ) {
+        socket.emit(
+          "hostReturnToMainError",
+          {
+            message:
+              "La orden solo puede ejecutarla el anfitrión."
+          }
+        );
         return;
       }
 
-      room.returningToMain = false;
-      room.lastActivityAt = Date.now();
+      /*
+       * Marcamos que la sala está en la transición al
+       * índice. Este estado queda almacenado aunque un
+       * navegador pierda el evento durante la navegación.
+       */
+      room.returningToMain =
+        true;
 
-      // Solo el anfitrión vuelve al índice.
-      socket.emit("navigateToMain", {
-        completedLevel: room.currentLevel
-      });
+      room.lastActivityAt =
+        Date.now();
 
-      socket.emit("hostReturnToMainAccepted", {
-        completedLevel: room.currentLevel
-      });
+      let sent =
+        0;
+
+      const notify =
+        () => {
+
+          sent += 1;
+
+          io.to(roomCode).emit(
+            "navigateToMain",
+            {
+              completedLevel:
+                room.currentLevel
+            }
+          );
+
+          if (
+            sent < 10
+          ) {
+            setTimeout(
+              notify,
+              400
+            );
+          }
+        };
+
+      notify();
+
+      /*
+       * Confirmación directa al socket que lanzó la orden.
+       * Esto permite al anfitrión cambiar de página incluso si
+       * su socket original se cerró al mostrar la victoria.
+       */
+      socket.emit(
+        "hostReturnToMainAccepted",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
+
+      console.log(
+        "HOST: regreso a principal",
+        {
+          roomCode,
+          playerToken
+        }
+      );
     }
   );
 
-
-  socket.on(
-    "watchRoomLevel",
-    (data = {}) => {
-      const roomCode = String(data?.roomCode || "").trim().toUpperCase();
-      const room = rooms.get(roomCode);
-      if (!room) return;
-
-      // Observador: entra en la room de Socket.IO, pero no en room.players.
-      socket.join(roomCode);
-      socket.watchRoomCode = roomCode;
-      socket.isRoomWatcher = true;
-
-      socket.emit("roomWatchState", {
-        status: room.status,
-        currentLevel: room.currentLevel,
-        completedLevels: room.completedLevels,
-        currentPuzzle: room.currentPuzzle,
-        currentQuestion: room.currentQuestion,
-        timeRemaining: room.timeRemaining
-      });
-    }
-  );
 
   socket.on(
     "hostContinueToNextLevel",
@@ -899,16 +920,19 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const level1Completed =
-        Number(room.currentLevel || 1) === 1 &&
-        Array.isArray(room.completedLevels) &&
-        room.completedLevels.includes(1) &&
-        Number(room.puzzlesSolved || 0) >= Number(room.totalPuzzles || 5);
+      if (
+        room.status !==
+        "victory"
+      ) {
 
-      if (room.status !== "victory" && !level1Completed) {
-        socket.emit("hostSelectLevelError", {
-          message: "La sala todavía no ha completado el Nivel 1."
-        });
+        socket.emit(
+          "hostSelectLevelError",
+          {
+            message:
+              "La sala no está en pantalla final."
+          }
+        );
+
         return;
       }
 
@@ -1622,11 +1646,18 @@ room.players.forEach(
        * jugador que llegue un poco más tarde al índice reciba
        * también la orden de navegación al reconectarse.
        */
-      room.returningToMain = false;
+      room.returningToMain = true;
       room.lastActivityAt = Date.now();
 
+      io.to(roomCode).emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
+
       console.log(
-        "MULTIJUGADOR: VICTORIA -> ESPERANDO AL ANFITRIÓN",
+        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
         roomCode
       );
 
@@ -1863,6 +1894,15 @@ room.failCount +=
     broadcastRoomState(
       roomCode
     );
+
+    io.to(roomCode).emit("nextQuestion", {
+      level: room.currentLevel,
+      currentPuzzle: room.currentPuzzle,
+      currentQuestion: room.currentQuestion,
+      timeRemaining: room.timeRemaining,
+      bonusActive: false,
+      bonusRemaining: 0
+    });
 
   }
 );
