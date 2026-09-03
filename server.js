@@ -725,17 +725,39 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
-      /* Solo el anfitrión que pulsa el botón navega al índice. */
-      room.returningToMain = false;
-      room.lastActivityAt = Date.now();
+      room.returningToMain =
+        true;
 
-      socket.emit(
-        "navigateToMain",
-        {
-          completedLevel:
-            room.currentLevel
-        }
-      );
+      room.lastActivityAt =
+        Date.now();
+
+      let sent =
+        0;
+
+      const notify =
+        () => {
+
+          sent += 1;
+
+          io.to(roomCode).emit(
+            "navigateToMain",
+            {
+              completedLevel:
+                room.currentLevel
+            }
+          );
+
+          if (
+            sent < 10
+          ) {
+            setTimeout(
+              notify,
+              400
+            );
+          }
+        };
+
+      notify();
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -1616,77 +1638,42 @@ room.players.forEach(
       );
 
       /*
-       * La victoria NO navega automáticamente. Ambos jugadores
-       * permanecen en la pantalla final hasta que el anfitrión
-       * pulse el botón correspondiente.
+       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
+       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
+       * el índice será el único punto desde el que podrá hacerlo.
+       *
+       * Dejamos la sala en modo de transición para que cualquier
+       * jugador que llegue un poco más tarde al índice reciba
+       * también la orden de navegación al reconectarse.
        */
-      room.returningToMain = false;
+      room.returningToMain = true;
       room.lastActivityAt = Date.now();
 
+      io.to(roomCode).emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
+
       console.log(
-        "MULTIJUGADOR: VICTORIA -> ESPERANDO AL BOTÓN DEL ANFITRIÓN",
+        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
         roomCode
       );
 
     } else {
+      // El siguiente acertijo lo decide el servidor y lo reciben ambos jugadores.
+      advanceRoomPuzzle(roomCode, "solved");
 
-      /*
-       * Elegir UN nuevo acertijo.
-       */
-      room.currentPuzzle +=
-        1;
-      
-      room.currentQuestion =
-        room.questionPool.shift();
-
-      room.failCount =
-        0;
-
-      room.questionStartedAt =
-        Date.now();
-
-      /*
-       * MUY IMPORTANTE:
-       * el nuevo acertijo todavía no está
-       * resuelto.
-       */
-      room.currentQuestionResolved =
-        false;
-      
-      room.bonusActive =
-        true;
-      
-      room.bonusRemaining =
-        PUZZLE_BONUS;
-
-      console.log(
-        "MULTIJUGADOR: NUEVO ACERTIJO",
-        {
-          puzzle: room.currentPuzzle,
-          question: room.currentQuestion,
-          bonus: room.bonusRemaining
-        }
-      );
+      // Bonificación de 30 s posterior al acierto.
+      room.bonusActive = true;
+      room.bonusRemaining = PUZZLE_BONUS;
     }
       
 
     broadcastRoomState(
       roomCode
     );
-
-    if (room.status === "playing") {
-      io.to(roomCode).emit(
-        "puzzleAdvanced",
-        {
-          currentPuzzle: room.currentPuzzle,
-          currentQuestion: room.currentQuestion,
-          puzzlesSolved: room.puzzlesSolved,
-          timeRemaining: room.timeRemaining,
-          bonusActive: room.bonusActive,
-          bonusRemaining: room.bonusRemaining
-        }
-      );
-    }
 
     console.log(
       "Acertijo resuelto:",
@@ -1834,84 +1821,11 @@ room.failCount +=
      * para toda la sala.
      */
 
-    room.currentPuzzle +=
-      1;
-
-    room.currentQuestion =
-      room.questionPool.shift();
-
-    room.currentQuestionResolved =
-      false;
-
-    room.failCount =
-      0;
-
-    room.questionStartedAt =
-      Date.now();
-
-
-    /*
-     * No hay bonificación por fallo.
-     */
-    room.bonusActive =
-      false;
-
-    room.bonusRemaining =
-      0;
-
+    advanceRoomPuzzle(roomCode, "fails");
 
     console.log(
-      "MULTIJUGADOR: TRES FALLOS, NUEVO ACERTIJO",
-      {
-        puzzle:
-          room.currentPuzzle,
-
-        question:
-          room.currentQuestion
-      }
+      "MULTIJUGADOR: TRES FALLOS, NUEVO ACERTIJO"
     );
-
-
-    broadcastRoomState(
-      roomCode
-    );
-
-    io.to(roomCode).emit(
-      "puzzleAdvanced",
-      {
-        currentPuzzle: room.currentPuzzle,
-        currentQuestion: room.currentQuestion,
-        puzzlesSolved: room.puzzlesSolved,
-        timeRemaining: room.timeRemaining,
-        bonusActive: room.bonusActive,
-        bonusRemaining: room.bonusRemaining
-      }
-    );
-
-  }
-);
-
-  // ------------------------------------------------
-  // DESCONEXIÓN
-  // ------------------------------------------------
-
-  socket.on(
-    "disconnect",
-    () => {
-
-      const roomCode =
-        socket.roomCode;
-
-      if (
-        !roomCode
-      ) {
-        return;
-      }
-
-      const room =
-        rooms.get(
-          roomCode
-        );
 
       if (
         !room
@@ -1938,6 +1852,36 @@ room.failCount +=
 
 });
 
+
+// --------------------------------------------------
+// AVANZAR ACERTIJO COMPARTIDO
+// --------------------------------------------------
+function advanceRoomPuzzle(roomCode, reason = "manual") {
+  const room = rooms.get(roomCode);
+  if (!room || room.status !== "playing" || room.currentQuestionResolved) return false;
+
+  room.currentPuzzle += 1;
+  room.currentQuestion = room.questionPool.shift();
+  room.currentQuestionResolved = false;
+  room.failCount = 0;
+  room.questionStartedAt = Date.now();
+  room.bonusActive = false;
+  room.bonusRemaining = 0;
+
+  const payload = {
+    currentPuzzle: room.currentPuzzle,
+    currentQuestion: room.currentQuestion,
+    puzzlesSolved: room.puzzlesSolved,
+    totalPuzzles: room.totalPuzzles,
+    reason
+  };
+
+  io.to(roomCode).emit("puzzleAdvanced", payload);
+  broadcastRoomState(roomCode);
+
+  console.log("MULTIJUGADOR: NUEVO ACERTIJO", { roomCode, ...payload });
+  return true;
+}
 
 // --------------------------------------------------
 // RELOJ GLOBAL DEL SERVIDOR
@@ -1974,6 +1918,17 @@ setInterval(
        *
        * El tiempo global NO disminuye.
        */
+
+      // Tiempo máximo por acertijo: 3 minutos, controlado por servidor.
+      if (
+        !room.bonusActive &&
+        !room.currentQuestionResolved &&
+        room.questionStartedAt &&
+        Date.now() - room.questionStartedAt >= 180000
+      ) {
+        advanceRoomPuzzle(roomCode, "timeout");
+        continue;
+      }
 
       if (
         room.bonusActive
