@@ -721,43 +721,19 @@ io.on("connection", (socket) => {
       }
 
       /*
-       * Marcamos que la sala está en la transición al
-       * índice. Este estado queda almacenado aunque un
-       * navegador pierda el evento durante la navegación.
+       * Solo el anfitrión navega al índice al pulsar el botón.
+       * La sala NO queda marcada como returningToMain para que un
+       * invitado que se reconecte no reciba una navegación automática.
        */
-      room.returningToMain =
-        true;
+      room.returningToMain = false;
+      room.lastActivityAt = Date.now();
 
-      room.lastActivityAt =
-        Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -1646,18 +1622,16 @@ room.players.forEach(
        * jugador que llegue un poco más tarde al índice reciba
        * también la orden de navegación al reconectarse.
        */
-      room.returningToMain = true;
+      /*
+       * IMPORTANTE: al completar el Nivel 1 nadie navega
+       * automáticamente al índice. La pantalla final queda visible
+       * hasta que el anfitrión pulse su botón.
+       */
+      room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
-      io.to(roomCode).emit(
-        "navigateToMain",
-        {
-          completedLevel: room.currentLevel
-        }
-      );
-
       console.log(
-        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
+        "MULTIJUGADOR: VICTORIA -> ESPERANDO BOTÓN DEL ANFITRIÓN",
         roomCode
       );
 
@@ -1894,15 +1868,6 @@ room.failCount +=
     broadcastRoomState(
       roomCode
     );
-
-    io.to(roomCode).emit("nextQuestion", {
-      level: room.currentLevel,
-      currentPuzzle: room.currentPuzzle,
-      currentQuestion: room.currentQuestion,
-      timeRemaining: room.timeRemaining,
-      bonusActive: false,
-      bonusRemaining: 0
-    });
 
   }
 );
