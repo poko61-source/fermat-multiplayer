@@ -644,17 +644,6 @@ io.on("connection", (socket) => {
 
 
   // ------------------------------------------------
-  // OBSERVAR ESTADO DE UNA SALA SIN REASIGNAR JUGADOR
-  // ------------------------------------------------
-  socket.on("watchRoomLevel", (data = {}) => {
-    const roomCode = String(data?.roomCode || "").trim().toUpperCase();
-    const room = rooms.get(roomCode);
-    if (!room) return;
-
-    socket.emit("roomLevelWatch", getRoomState(room));
-  });
-
-  // ------------------------------------------------
   // REANUDAR PARTIDA TRAS CAMBIO DE PÁGINA
   // ------------------------------------------------
 
@@ -732,49 +721,20 @@ io.on("connection", (socket) => {
       }
 
       /*
-       * Marcamos que la sala está en la transición al
-       * índice. Este estado queda almacenado aunque un
-       * navegador pierda el evento durante la navegación.
+       * Solo el anfitrión vuelve al índice.
+       * El invitado permanece en la pantalla final.
        */
-      room.returningToMain =
-        true;
+      room.returningToMain = false;
+      room.lastActivityAt = Date.now();
 
-      room.lastActivityAt =
-        Date.now();
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
 
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
-
-      /*
-       * Confirmación directa al socket que lanzó la orden.
-       * Esto permite al anfitrión cambiar de página incluso si
-       * su socket original se cerró al mostrar la victoria.
-       */
       socket.emit(
         "hostReturnToMainAccepted",
         {
@@ -1649,26 +1609,15 @@ room.players.forEach(
       );
 
       /*
-       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
-       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
-       * el índice será el único punto desde el que podrá hacerlo.
-       *
-       * Dejamos la sala en modo de transición para que cualquier
-       * jugador que llegue un poco más tarde al índice reciba
-       * también la orden de navegación al reconectarse.
+       * La victoria NO navega automáticamente al índice.
+       * Ambos permanecen en la pantalla final hasta que el
+       * anfitrión pulse el botón correspondiente.
        */
-      room.returningToMain = true;
+      room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
-      io.to(roomCode).emit(
-        "navigateToMain",
-        {
-          completedLevel: room.currentLevel
-        }
-      );
-
       console.log(
-        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
+        "MULTIJUGADOR: VICTORIA -> ESPERANDO AL ANFITRIÓN",
         roomCode
       );
 
