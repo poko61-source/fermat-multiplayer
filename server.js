@@ -725,39 +725,17 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
-      room.returningToMain =
-        true;
+      /* Solo el anfitrión que pulsa el botón navega al índice. */
+      room.returningToMain = false;
+      room.lastActivityAt = Date.now();
 
-      room.lastActivityAt =
-        Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -1638,19 +1616,15 @@ room.players.forEach(
       );
 
       /*
-       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
-       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
-       * el índice será el único punto desde el que podrá hacerlo.
-       *
-       * Dejamos la sala en modo de transición para que cualquier
-       * jugador que llegue un poco más tarde al índice reciba
-       * también la orden de navegación al reconectarse.
+       * La victoria NO navega automáticamente. Ambos jugadores
+       * permanecen en la pantalla final hasta que el anfitrión
+       * pulse el botón correspondiente.
        */
       room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
       console.log(
-        "MULTIJUGADOR: VICTORIA -> ESPERANDO AL ANFITRIÓN",
+        "MULTIJUGADOR: VICTORIA -> ESPERANDO AL BOTÓN DEL ANFITRIÓN",
         roomCode
       );
 
@@ -1694,20 +1668,28 @@ room.players.forEach(
         }
       );
     }
+      
 
-    io.to(roomCode).emit("puzzleAdvanced", {
-      currentPuzzle: room.currentPuzzle,
-      currentQuestion: room.currentQuestion,
-      puzzlesSolved: room.puzzlesSolved,
-      totalPuzzles: room.totalPuzzles,
-      timeRemaining: room.timeRemaining,
-      bonusActive: room.bonusActive,
-      bonusRemaining: room.bonusRemaining
-    });
+    broadcastRoomState(
+      roomCode
+    );
 
-    broadcastRoomState(roomCode);
+    if (room.status === "playing") {
+      io.to(roomCode).emit(
+        "puzzleAdvanced",
+        {
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          puzzlesSolved: room.puzzlesSolved,
+          timeRemaining: room.timeRemaining,
+          bonusActive: room.bonusActive,
+          bonusRemaining: room.bonusRemaining
+        }
+      );
+    }
 
-    console.log("Acertijo resuelto:",
+    console.log(
+      "Acertijo resuelto:",
       roomCode,
       room.puzzlesSolved,
       "/",
@@ -1888,22 +1870,29 @@ room.failCount +=
           room.currentQuestion
       }
     );
-    io.to(roomCode).emit("puzzleAdvanced", {
-      currentPuzzle: room.currentPuzzle,
-      currentQuestion: room.currentQuestion,
-      puzzlesSolved: room.puzzlesSolved,
-      totalPuzzles: room.totalPuzzles,
-      timeRemaining: room.timeRemaining,
-      bonusActive: room.bonusActive,
-      bonusRemaining: room.bonusRemaining
-    });
 
-    broadcastRoomState(roomCode);
+
+    broadcastRoomState(
+      roomCode
+    );
+
+    io.to(roomCode).emit(
+      "puzzleAdvanced",
+      {
+        currentPuzzle: room.currentPuzzle,
+        currentQuestion: room.currentQuestion,
+        puzzlesSolved: room.puzzlesSolved,
+        timeRemaining: room.timeRemaining,
+        bonusActive: room.bonusActive,
+        bonusRemaining: room.bonusRemaining
+      }
+    );
+
   }
 );
 
   // ------------------------------------------------
-  // DESCONEXIÓN)
+  // DESCONEXIÓN
   // ------------------------------------------------
 
   socket.on(
