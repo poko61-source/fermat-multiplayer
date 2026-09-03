@@ -686,57 +686,76 @@ io.on("connection", (socket) => {
   socket.on(
     "hostReturnToMain",
     (data = {}) => {
+
       const roomCode =
         socket.roomCode ||
-        String(data?.roomCode || "").trim().toUpperCase();
-      const playerToken =
-        String(data?.playerToken || socket.playerToken || "").trim();
-      const room = rooms.get(roomCode);
+        String(
+          data?.roomCode || ""
+        ).trim().toUpperCase();
 
-      if (!room || playerToken !== room.hostToken) {
-        socket.emit("hostReturnToMainError", {
-          message: "La orden solo puede ejecutarla el anfitrión."
-        });
+      const playerToken =
+        String(
+          data?.playerToken ||
+          socket.playerToken ||
+          ""
+        ).trim();
+
+      const room =
+        rooms.get(
+          roomCode
+        );
+
+      if (
+        !room ||
+        playerToken !==
+          room.hostToken
+      ) {
+        socket.emit(
+          "hostReturnToMainError",
+          {
+            message:
+              "La orden solo puede ejecutarla el anfitrión."
+          }
+        );
         return;
       }
 
+      /*
+       * La vuelta al índice es exclusiva del anfitrión.
+       * No guardamos returningToMain para no arrastrar la
+       * navegación al invitado cuando se reconecte.
+       */
       room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
-      // Solo el anfitrión vuelve al índice.
-      socket.emit("navigateToMain", {
-        completedLevel: room.currentLevel
-      });
+      /*
+       * Solo el socket que pulsó el botón recibe la navegación.
+       */
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
 
-      socket.emit("hostReturnToMainAccepted", {
-        completedLevel: room.currentLevel
-      });
+      socket.emit(
+        "hostReturnToMainAccepted",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
+
+      console.log(
+        "HOST: regreso a principal",
+        {
+          roomCode,
+          playerToken
+        }
+      );
     }
   );
 
-
-  socket.on(
-    "watchRoomLevel",
-    (data = {}) => {
-      const roomCode = String(data?.roomCode || "").trim().toUpperCase();
-      const room = rooms.get(roomCode);
-      if (!room) return;
-
-      // Observador: entra en la room de Socket.IO, pero no en room.players.
-      socket.join(roomCode);
-      socket.watchRoomCode = roomCode;
-      socket.isRoomWatcher = true;
-
-      socket.emit("roomWatchState", {
-        status: room.status,
-        currentLevel: room.currentLevel,
-        completedLevels: room.completedLevels,
-        currentPuzzle: room.currentPuzzle,
-        currentQuestion: room.currentQuestion,
-        timeRemaining: room.timeRemaining
-      });
-    }
-  );
 
   socket.on(
     "hostContinueToNextLevel",
@@ -875,16 +894,19 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const level1Completed =
-        Number(room.currentLevel || 1) === 1 &&
-        Array.isArray(room.completedLevels) &&
-        room.completedLevels.includes(1) &&
-        Number(room.puzzlesSolved || 0) >= Number(room.totalPuzzles || 5);
+      if (
+        room.status !==
+        "victory"
+      ) {
 
-      if (room.status !== "victory" && !level1Completed) {
-        socket.emit("hostSelectLevelError", {
-          message: "La sala todavía no ha completado el Nivel 1."
-        });
+        socket.emit(
+          "hostSelectLevelError",
+          {
+            message:
+              "La sala no está en pantalla final."
+          }
+        );
+
         return;
       }
 
@@ -1590,13 +1612,9 @@ room.players.forEach(
       );
 
       /*
-       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
-       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
-       * el índice será el único punto desde el que podrá hacerlo.
-       *
-       * Dejamos la sala en modo de transición para que cualquier
-       * jugador que llegue un poco más tarde al índice reciba
-       * también la orden de navegación al reconectarse.
+       * La victoria NO navega automáticamente.
+       * Ambos permanecen en la pantalla final hasta que el
+       * anfitrión pulse el botón para volver al índice.
        */
       room.returningToMain = false;
       room.lastActivityAt = Date.now();
