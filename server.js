@@ -725,39 +725,19 @@ io.on("connection", (socket) => {
        * índice. Este estado queda almacenado aunque un
        * navegador pierda el evento durante la navegación.
        */
-      room.returningToMain =
-        true;
+      /*
+       * Solo el anfitrión vuelve al índice.
+       * No se envía la navegación a toda la sala.
+       */
+      room.returningToMain = false;
+      room.lastActivityAt = Date.now();
 
-      room.lastActivityAt =
-        Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -1636,28 +1616,16 @@ room.players.forEach(
           );
         }
       );
-
       /*
-       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
-       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
-       * el índice será el único punto desde el que podrá hacerlo.
-       *
-       * Dejamos la sala en modo de transición para que cualquier
-       * jugador que llegue un poco más tarde al índice reciba
-       * también la orden de navegación al reconectarse.
+       * La pantalla de victoria permanece abierta.
+       * NADIE vuelve al índice automáticamente.
+       * Solo el anfitrión podrá hacerlo pulsando el botón final.
        */
-      room.returningToMain = true;
+      room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
-      io.to(roomCode).emit(
-        "navigateToMain",
-        {
-          completedLevel: room.currentLevel
-        }
-      );
-
       console.log(
-        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
+        "MULTIJUGADOR: VICTORIA -> ESPERANDO BOTÓN DEL ANFITRIÓN",
         roomCode
       );
 
@@ -1698,19 +1666,6 @@ room.players.forEach(
           puzzle: room.currentPuzzle,
           question: room.currentQuestion,
           bonus: room.bonusRemaining
-        }
-      );
-
-      // Evento explícito para que ambos clientes avancen aunque
-      // exista una carrera entre roomState, sonido y la UI local.
-      io.to(roomCode).emit(
-        "puzzleAdvanced",
-        {
-          currentPuzzle: room.currentPuzzle,
-          currentQuestion: room.currentQuestion,
-          puzzlesSolved: room.puzzlesSolved,
-          bonusActive: room.bonusActive,
-          bonusRemaining: room.bonusRemaining
         }
       );
     }
@@ -1963,8 +1918,6 @@ room.failCount +=
 // RELOJ GLOBAL DEL SERVIDOR
 // --------------------------------------------------
 
-const QUESTION_DURATION = 3 * 60;
-
 setInterval(
   () => {
 
@@ -1987,51 +1940,6 @@ setInterval(
         "playing"
       ) {
 
-        continue;
-      }
-
-      // Tiempo autoritativo por acertijo: nunca repetimos el mismo
-      // acertijo cuando el contador local llega a 00:00.
-      const elapsedQuestion =
-        room.questionStartedAt
-          ? Math.floor((Date.now() - room.questionStartedAt) / 1000)
-          : 0;
-
-      if (
-        room.currentQuestion &&
-        elapsedQuestion >= QUESTION_DURATION &&
-        !room.currentQuestionResolved
-      ) {
-        room.currentQuestionResolved = true;
-
-        room.currentPuzzle += 1;
-        room.currentQuestion = room.questionPool.shift();
-        room.failCount = 0;
-        room.questionStartedAt = Date.now();
-        room.bonusActive = false;
-        room.bonusRemaining = 0;
-
-        console.log(
-          "MULTIJUGADOR: TIMEOUT DE ACERTIJO",
-          {
-            puzzle: room.currentPuzzle,
-            question: room.currentQuestion
-          }
-        );
-
-        io.to(roomCode).emit(
-          "puzzleAdvanced",
-          {
-            reason: "TIMEOUT",
-            currentPuzzle: room.currentPuzzle,
-            currentQuestion: room.currentQuestion,
-            puzzlesSolved: room.puzzlesSolved,
-            bonusActive: false,
-            bonusRemaining: 0
-          }
-        );
-
-        broadcastRoomState(roomCode);
         continue;
       }
 
