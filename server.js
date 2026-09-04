@@ -112,7 +112,6 @@ function createGameState() {
     lastActivityAt: Date.now(),
     questionPool: [],
     failCount: 0,
-    questionTimeRemaining: 180,
 
     // Jugadores que deben reaparecer en el siguiente nivel.
     nextLevelPlayerTokens: [],
@@ -179,6 +178,13 @@ function broadcastRoomState(roomCode) {
     return;
   }
 
+  // El asiento lógico se conserva mediante playerToken, pero no
+  // contamos sockets antiguos/desconectados como jugadores activos.
+  room.players = [...new Set(room.players)].filter(
+    playerSocketId =>
+      io.sockets.sockets.has(playerSocketId)
+  );
+
   room.players.forEach(
     playerSocketId => {
 
@@ -240,7 +246,6 @@ function startNextLevelIfReady(roomCode) {
   room.currentQuestionResolved = false;
   room.puzzlesSolved = 0;
   room.failCount = 0;
-  room.questionTimeRemaining = 180;
   room.timeRemaining = GAME_DURATION;
   room.bonusActive = false;
   room.bonusRemaining = 0;
@@ -322,7 +327,6 @@ function startNextLevelForRoom(
 
   room.failCount =
     0;
-  room.questionTimeRemaining = 180;
 
   room.timeRemaining =
     GAME_DURATION;
@@ -654,14 +658,34 @@ io.on("connection", (socket) => {
     socket.on(
     "requestReturnToMain",
     () => {
-      // Nunca navegamos automáticamente desde la victoria.
-      // El anfitrión debe pulsar explícitamente el botón final.
-      socket.emit(
-        "returnToMainWaiting",
-        {
-          completedLevel: rooms.get(socket.roomCode)?.currentLevel || 1
-        }
-      );
+
+      const roomCode =
+        socket.roomCode;
+
+      const room =
+        rooms.get(
+          roomCode
+        );
+
+      if (
+        !room
+      ) {
+        return;
+      }
+
+      if (
+        room.returningToMain ===
+        true
+      ) {
+
+        socket.emit(
+          "navigateToMain",
+          {
+            completedLevel:
+              room.currentLevel
+          }
+        );
+      }
     }
   );
 
@@ -703,16 +727,44 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // La salida al índice solo afecta al anfitrión.
-      room.returningToMain = false;
-      room.lastActivityAt = Date.now();
+      /*
+       * Marcamos que la sala está en la transición al
+       * índice. Este estado queda almacenado aunque un
+       * navegador pierda el evento durante la navegación.
+       */
+      room.returningToMain =
+        true;
 
-      socket.emit(
-        "navigateToMain",
-        {
-          completedLevel: room.currentLevel
-        }
-      );
+      room.lastActivityAt =
+        Date.now();
+
+      let sent =
+        0;
+
+      const notify =
+        () => {
+
+          sent += 1;
+
+          io.to(roomCode).emit(
+            "navigateToMain",
+            {
+              completedLevel:
+                room.currentLevel
+            }
+          );
+
+          if (
+            sent < 10
+          ) {
+            setTimeout(
+              notify,
+              400
+            );
+          }
+        };
+
+      notify();
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -1592,13 +1644,27 @@ room.players.forEach(
         }
       );
 
-      // La pantalla final permanece abierta.
-      // Solo el botón del anfitrión puede iniciar la salida al índice.
-      room.returningToMain = false;
+      /*
+       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
+       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
+       * el índice será el único punto desde el que podrá hacerlo.
+       *
+       * Dejamos la sala en modo de transición para que cualquier
+       * jugador que llegue un poco más tarde al índice reciba
+       * también la orden de navegación al reconectarse.
+       */
+      room.returningToMain = true;
       room.lastActivityAt = Date.now();
 
+      io.to(roomCode).emit(
+        "navigateToMain",
+        {
+          completedLevel: room.currentLevel
+        }
+      );
+
       console.log(
-        "MULTIJUGADOR: VICTORIA -> ESPERANDO BOTÓN DEL ANFITRIÓN",
+        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
         roomCode
       );
 
@@ -1618,7 +1684,6 @@ room.players.forEach(
 
       room.questionStartedAt =
         Date.now();
-      room.questionTimeRemaining = 180;
 
       /*
        * MUY IMPORTANTE:
@@ -1648,6 +1713,18 @@ room.players.forEach(
     broadcastRoomState(
       roomCode
     );
+
+    // Evento explícito: todos los clientes cargan exactamente
+    // el siguiente acertijo decidido por el servidor.
+    io.to(roomCode).emit("puzzleAdvanced", {
+      currentPuzzle: room.currentPuzzle,
+      currentQuestion: room.currentQuestion,
+      puzzlesSolved: room.puzzlesSolved,
+      totalPuzzles: room.totalPuzzles,
+      timeRemaining: room.timeRemaining,
+      bonusActive: room.bonusActive,
+      bonusRemaining: room.bonusRemaining
+    });
 
     console.log(
       "Acertijo resuelto:",
@@ -1809,7 +1886,6 @@ room.failCount +=
 
     room.questionStartedAt =
       Date.now();
-    room.questionTimeRemaining = 180;
 
 
     /*
@@ -1837,6 +1913,16 @@ room.failCount +=
     broadcastRoomState(
       roomCode
     );
+
+    io.to(roomCode).emit("puzzleAdvanced", {
+      currentPuzzle: room.currentPuzzle,
+      currentQuestion: room.currentQuestion,
+      puzzlesSolved: room.puzzlesSolved,
+      totalPuzzles: room.totalPuzzles,
+      timeRemaining: room.timeRemaining,
+      bonusActive: room.bonusActive,
+      bonusRemaining: room.bonusRemaining
+    });
 
   }
 );
@@ -1941,53 +2027,18 @@ setInterval(
           room.bonusRemaining =
             0;
 
+
           room.bonusActive =
             false;
 
-          // Los 3 minutos empiezan de nuevo cuando termina la bonificación.
-          room.questionTimeRemaining = 180;
-          room.questionStartedAt = Date.now();
         }
 
       } else {
 
         /*
-         * RELOJ DEL ACERTIJO: 3 MINUTOS, AUTORITATIVO EN SERVIDOR
+         * RELOJ NORMAL
          */
-        room.questionTimeRemaining =
-          Math.max(0, (room.questionTimeRemaining ?? 180) - 1);
 
-        if (room.questionTimeRemaining <= 0) {
-          room.currentPuzzle += 1;
-          room.currentQuestion = room.questionPool.shift();
-          room.currentQuestionResolved = false;
-          room.failCount = 0;
-          room.questionTimeRemaining = 180;
-          room.questionStartedAt = Date.now();
-          room.bonusActive = false;
-          room.bonusRemaining = 0;
-
-          io.to(roomCode).emit(
-            "puzzleAdvanced",
-            {
-              reason: "TIMEOUT",
-              currentPuzzle: room.currentPuzzle,
-              currentQuestion: room.currentQuestion,
-              puzzlesSolved: room.puzzlesSolved,
-              bonusActive: false,
-              bonusRemaining: 0
-            }
-          );
-
-          console.log(
-            "MULTIJUGADOR: TIMEOUT 3 MIN -> NUEVO ACERTIJO",
-            { room: roomCode, puzzle: room.currentPuzzle, question: room.currentQuestion }
-          );
-        }
-
-        /*
-         * RELOJ NORMAL GLOBAL
-         */
         room.timeRemaining -=
           1;
 
