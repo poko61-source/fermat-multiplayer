@@ -728,43 +728,19 @@ io.on("connection", (socket) => {
       }
 
       /*
-       * Marcamos que la sala está en la transición al
-       * índice. Este estado queda almacenado aunque un
-       * navegador pierda el evento durante la navegación.
+       * Solo el anfitrión vuelve al índice al pulsar el botón.
+       * El invitado permanece en la pantalla final.
        */
-      room.returningToMain =
-        true;
+      room.returningToMain = false;
+      room.lastActivityAt = Date.now();
 
-      room.lastActivityAt =
-        Date.now();
-
-      let sent =
-        0;
-
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
 
       /*
        * Confirmación directa al socket que lanzó la orden.
@@ -1645,26 +1621,14 @@ room.players.forEach(
       );
 
       /*
-       * Al terminar el Nivel 1, TODOS los jugadores deben pasar
-       * por el índice global. El anfitrión no inicia aquí el Nivel 2:
-       * el índice será el único punto desde el que podrá hacerlo.
-       *
-       * Dejamos la sala en modo de transición para que cualquier
-       * jugador que llegue un poco más tarde al índice reciba
-       * también la orden de navegación al reconectarse.
+       * Victoria: ambos permanecen en la pantalla final.
+       * El anfitrión deberá pulsar el botón para volver al índice.
        */
-      room.returningToMain = true;
+      room.returningToMain = false;
       room.lastActivityAt = Date.now();
 
-      io.to(roomCode).emit(
-        "navigateToMain",
-        {
-          completedLevel: room.currentLevel
-        }
-      );
-
       console.log(
-        "MULTIJUGADOR: VICTORIA -> TODOS AL ÍNDICE",
+        "MULTIJUGADOR: VICTORIA -> ESPERANDO AL ANFITRIÓN",
         roomCode
       );
 
