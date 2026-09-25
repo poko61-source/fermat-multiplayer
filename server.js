@@ -17,6 +17,7 @@ const rooms = new Map();
 const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
+const QUESTION_TIME = 3 * 60;
 const PUZZLE_BONUS = 30;
 const POINTS_PER_SOLVED = 500;
 const POINTS_PER_FAIL = 50;
@@ -111,6 +112,7 @@ function createGameState() {
     hostSocketId: null,
     lastActivityAt: Date.now(),
     questionPool: [],
+    questionStartedAt: null,
     failCount: 0,
 
     // Jugadores que deben reaparecer en el siguiente nivel.
@@ -125,6 +127,16 @@ function createGameState() {
 // --------------------------------------------------
 
 function getRoomState(room) {
+  const questionTimeRemaining =
+    room.status === "playing" &&
+    typeof room.questionStartedAt === "number"
+      ? Math.max(
+          0,
+          QUESTION_TIME -
+            Math.floor((Date.now() - room.questionStartedAt) / 1000)
+        )
+      : null;
+
   return {
     status: room.status,
     currentLevel: room.currentLevel,
@@ -144,6 +156,8 @@ function getRoomState(room) {
 
     timeRemaining:
       room.timeRemaining,
+
+    questionTimeRemaining,
 
     bonusActive:
       room.bonusActive,
@@ -288,13 +302,16 @@ function startNextLevelForRoom(
     return false;
   }
 
-  if (
-    !Number.isInteger(
-      targetLevel
-    ) ||
-    targetLevel !==
-      (room.currentLevel || 1) + 1
-  ) {
+  const isNextLevel =
+    Number.isInteger(targetLevel) &&
+    targetLevel === (room.currentLevel || 1) + 1;
+
+  const isRestartAfterDefeat =
+    room.status === "defeat" &&
+    Number.isInteger(targetLevel) &&
+    targetLevel === (room.currentLevel || 1);
+
+  if (!isNextLevel && !isRestartAfterDefeat) {
     return false;
   }
 
@@ -369,7 +386,8 @@ function startNextLevelForRoom(
     level: targetLevel,
     currentPuzzle: room.currentPuzzle,
     currentQuestion: room.currentQuestion,
-    timeRemaining: room.timeRemaining
+    timeRemaining: room.timeRemaining,
+    questionTimeRemaining: QUESTION_TIME
   };
 
   io.to(roomCode).emit(
@@ -391,7 +409,11 @@ function startNextLevelForRoom(
         level: targetLevel,
         currentPuzzle: currentRoom.currentPuzzle,
         currentQuestion: currentRoom.currentQuestion,
-        timeRemaining: currentRoom.timeRemaining
+        timeRemaining: currentRoom.timeRemaining,
+        questionTimeRemaining:
+          typeof currentRoom.questionStartedAt === "number"
+            ? Math.max(0, QUESTION_TIME - Math.floor((Date.now() - currentRoom.questionStartedAt) / 1000))
+            : QUESTION_TIME
       };
 
       currentRoom.players.forEach(playerSocketId => {
@@ -857,7 +879,8 @@ io.on("connection", (socket) => {
           level: targetLevel,
           currentPuzzle: room.currentPuzzle,
           currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining
+          timeRemaining: room.timeRemaining,
+          questionTimeRemaining: getRoomState(room).questionTimeRemaining
         }
       );
     }
@@ -903,26 +926,27 @@ io.on("connection", (socket) => {
         return;
       }
 
-      if (
-        room.status !==
-        "victory"
-      ) {
+      const targetLevel =
+        Number(
+          data?.targetLevel || 2
+        );
+
+      const canStart =
+        room.status === "victory" ||
+        (room.status === "defeat" && targetLevel === room.currentLevel);
+
+      if (!canStart) {
 
         socket.emit(
           "hostSelectLevelError",
           {
             message:
-              "La sala no está en pantalla final."
+              "La sala no permite iniciar ese nivel desde el estado actual."
           }
         );
 
         return;
       }
-
-      const targetLevel =
-        Number(
-          data?.targetLevel || 2
-        );
 
       const started =
         startNextLevelForRoom(
@@ -939,7 +963,7 @@ io.on("connection", (socket) => {
           "hostSelectLevelError",
           {
             message:
-              "Nivel solicitado no válido."
+              "No se pudo iniciar o reiniciar el nivel solicitado."
           }
         );
 
@@ -962,7 +986,8 @@ io.on("connection", (socket) => {
           level: targetLevel,
           currentPuzzle: room.currentPuzzle,
           currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining
+          timeRemaining: room.timeRemaining,
+          questionTimeRemaining: getRoomState(room).questionTimeRemaining
         }
       );
     }
@@ -1098,6 +1123,8 @@ io.on("connection", (socket) => {
             room.completedLevels,
           currentLevel:
             room.currentLevel,
+          status:
+            room.status,
           hostToken:
             room.hostToken,
           isHost:
@@ -1127,7 +1154,8 @@ io.on("connection", (socket) => {
           level: 2,
           currentPuzzle: room.currentPuzzle,
           currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining
+          timeRemaining: room.timeRemaining,
+          questionTimeRemaining: getRoomState(room).questionTimeRemaining
         });
       }
 
@@ -1263,7 +1291,8 @@ io.on("connection", (socket) => {
           level: 2,
           currentPuzzle: room.currentPuzzle,
           currentQuestion: room.currentQuestion,
-          timeRemaining: room.timeRemaining
+          timeRemaining: room.timeRemaining,
+          questionTimeRemaining: getRoomState(room).questionTimeRemaining
         });
       }
 
@@ -1383,6 +1412,9 @@ io.on("connection", (socket) => {
       
       room.currentQuestion =
         room.questionPool.shift();
+
+      room.questionStartedAt =
+        Date.now();
 
       room.currentQuestionResolved =
         false;
@@ -1884,6 +1916,7 @@ room.failCount +=
       puzzlesSolved: room.puzzlesSolved,
       totalPuzzles: room.totalPuzzles,
       timeRemaining: room.timeRemaining,
+      questionTimeRemaining: getRoomState(room).questionTimeRemaining,
       bonusActive: room.bonusActive,
       bonusRemaining: room.bonusRemaining
     });
@@ -2029,6 +2062,46 @@ setInterval(
 
       }
 
+
+      /*
+       * RELOJ DEL ACERTIJO: el servidor es la única autoridad.
+       * Al agotarse los 3 minutos se cambia a la siguiente prueba
+       * para toda la sala. No depende del reloj local de cada navegador.
+       */
+      if (
+        room.status === "playing" &&
+        typeof room.questionStartedAt === "number" &&
+        !room.currentQuestionResolved &&
+        Date.now() - room.questionStartedAt >= QUESTION_TIME * 1000
+      ) {
+        room.currentPuzzle += 1;
+        room.currentQuestion = room.questionPool.shift();
+        room.currentQuestionResolved = false;
+        room.failCount = 0;
+        room.questionStartedAt = Date.now();
+        room.bonusActive = false;
+        room.bonusRemaining = 0;
+
+        console.log(
+          "MULTIJUGADOR: TIEMPO DE ACERTIJO AGOTADO",
+          {
+            roomCode,
+            puzzle: room.currentPuzzle,
+            question: room.currentQuestion
+          }
+        );
+
+        io.to(roomCode).emit("puzzleAdvanced", {
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          puzzlesSolved: room.puzzlesSolved,
+          totalPuzzles: room.totalPuzzles,
+          timeRemaining: room.timeRemaining,
+          questionTimeRemaining: QUESTION_TIME,
+          bonusActive: room.bonusActive,
+          bonusRemaining: room.bonusRemaining
+        });
+      }
 
       broadcastRoomState(
         roomCode
