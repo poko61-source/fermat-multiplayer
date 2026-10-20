@@ -41,6 +41,7 @@ const rooms = new Map();
 const MAX_PLAYERS = 4;
 const TOTAL_PUZZLES = 5;
 const GAME_DURATION = 10 * 60;
+const QUESTION_TIME = 3 * 60;
 const PUZZLE_BONUS = 30;
 const POINTS_PER_SOLVED = 500;
 const POINTS_PER_FAIL = 50;
@@ -115,6 +116,31 @@ function createQuestionPool() {
   return questions;
 }
 
+function drawNextQuestion(room) {
+  if (!Array.isArray(room.questionPool)) room.questionPool = [];
+  if (room.questionPool.length === 0) room.questionPool = createQuestionPool();
+
+  const previousQuestion = Number(room.currentQuestion);
+  let nextIndex = room.questionPool.findIndex(
+    question => Number(question) !== previousQuestion
+  );
+
+  if (nextIndex < 0) {
+    room.questionPool = createQuestionPool();
+    nextIndex = room.questionPool.findIndex(
+      question => Number(question) !== previousQuestion
+    );
+  }
+
+  if (nextIndex > 0) {
+    [room.questionPool[0], room.questionPool[nextIndex]] =
+      [room.questionPool[nextIndex], room.questionPool[0]];
+  }
+
+  return room.questionPool.shift();
+}
+
+
 function createGameState() {
   return {
     status: "waiting",
@@ -135,6 +161,8 @@ function createGameState() {
     hostSocketId: null,
     lastActivityAt: Date.now(),
     questionPool: [],
+    questionStartedAt: null,
+    currentQuestionResolved: false,
     failCount: 0,
 
     // Jugadores que deben reaparecer en el siguiente nivel.
@@ -149,6 +177,15 @@ function createGameState() {
 // --------------------------------------------------
 
 function getRoomState(room) {
+  const questionTimeRemaining =
+    room.status === "playing" &&
+    typeof room.questionStartedAt === "number"
+      ? Math.max(
+          0,
+          QUESTION_TIME - Math.floor((Date.now() - room.questionStartedAt) / 1000)
+        )
+      : null;
+
   return {
     status: room.status,
     currentLevel: room.currentLevel,
@@ -168,6 +205,8 @@ function getRoomState(room) {
 
     timeRemaining:
       room.timeRemaining,
+
+    questionTimeRemaining,
 
     bonusActive:
       room.bonusActive,
@@ -261,6 +300,7 @@ function startNextLevelIfReady(roomCode) {
   room.questionPool = createQuestionPool();
   room.currentQuestion = room.questionPool.shift();
   room.currentQuestionResolved = false;
+  room.questionStartedAt = Date.now();
   room.puzzlesSolved = 0;
   room.failCount = 0;
   room.timeRemaining = GAME_DURATION;
@@ -755,39 +795,16 @@ io.on("connection", (socket) => {
       room.lastActivityAt =
         Date.now();
 
-      let sent =
-        0;
+      /* Solo el anfitrión vuelve a Expedientes. El invitado no recibe
+       * navigateToMain y permanece esperando hasta que se elija Nivel 2. */
+      socket.emit(
+        "navigateToMain",
+        {
+          completedLevel:
+            room.currentLevel
+        }
+      );
 
-      const notify =
-        () => {
-
-          sent += 1;
-
-          io.to(roomCode).emit(
-            "navigateToMain",
-            {
-              completedLevel:
-                room.currentLevel
-            }
-          );
-
-          if (
-            sent < 10
-          ) {
-            setTimeout(
-              notify,
-              400
-            );
-          }
-        };
-
-      notify();
-
-      /*
-       * Confirmación directa al socket que lanzó la orden.
-       * Esto permite al anfitrión cambiar de página incluso si
-       * su socket original se cerró al mostrar la victoria.
-       */
       socket.emit(
         "hostReturnToMainAccepted",
         {
@@ -1427,6 +1444,7 @@ io.on("connection", (socket) => {
 
       room.currentQuestionResolved =
         false;
+      room.questionStartedAt = Date.now();
 
 
       room.puzzlesSolved =
@@ -1663,22 +1681,15 @@ room.players.forEach(
 
       if (Number(room.currentLevel) === 1) {
         /*
-         * Al terminar el Nivel 1, todos regresan a Expedientes.
-         * El anfitrión selecciona allí el Nivel 2, y el servidor
-         * sincroniza el cambio para toda la sala.
+         * Ambos jugadores permanecen en la pantalla de victoria.
+         * Solo el anfitrión tiene habilitado el regreso a Expedientes.
+         * Desde allí selecciona el Nivel 2 y el servidor lleva a ambos.
          */
-        room.returningToMain = true;
+        room.returningToMain = false;
         room.lastActivityAt = Date.now();
 
-        io.to(roomCode).emit(
-          "navigateToMain",
-          {
-            completedLevel: room.currentLevel
-          }
-        );
-
         console.log(
-          "MULTIJUGADOR: VICTORIA NIVEL 1 -> TODOS A EXPEDIENTES",
+          "MULTIJUGADOR: VICTORIA NIVEL 1 -> ESPERANDO AL ANFITRIÓN",
           roomCode
         );
       } else {
@@ -1705,7 +1716,7 @@ room.players.forEach(
         1;
       
       room.currentQuestion =
-        room.questionPool.shift();
+        drawNextQuestion(room);
 
       room.failCount =
         0;
@@ -1892,7 +1903,7 @@ room.failCount +=
       1;
 
     room.currentQuestion =
-      room.questionPool.shift();
+      drawNextQuestion(room);
 
     room.currentQuestionResolved =
       false;
@@ -2071,6 +2082,45 @@ setInterval(
 
       }
 
+
+      // El servidor es la autoridad del reloj de cada acertijo.
+      if (
+        room.status === "playing" &&
+        typeof room.questionStartedAt === "number" &&
+        !room.currentQuestionResolved &&
+        Date.now() - room.questionStartedAt >= QUESTION_TIME * 1000
+      ) {
+        const previousQuestion = room.currentQuestion;
+
+        room.currentPuzzle += 1;
+        room.currentQuestion = drawNextQuestion(room);
+        room.currentQuestionResolved = false;
+        room.failCount = 0;
+        room.questionStartedAt = Date.now();
+        room.bonusActive = false;
+        room.bonusRemaining = 0;
+
+        io.to(roomCode).emit("puzzleAdvanced", {
+          currentPuzzle: room.currentPuzzle,
+          currentQuestion: room.currentQuestion,
+          puzzlesSolved: room.puzzlesSolved,
+          totalPuzzles: room.totalPuzzles,
+          timeRemaining: room.timeRemaining,
+          questionTimeRemaining: QUESTION_TIME,
+          bonusActive: room.bonusActive,
+          bonusRemaining: room.bonusRemaining
+        });
+
+        console.log(
+          "MULTIJUGADOR: TIEMPO DE ACERTIJO AGOTADO",
+          {
+            roomCode,
+            previousQuestion,
+            currentPuzzle: room.currentPuzzle,
+            currentQuestion: room.currentQuestion
+          }
+        );
+      }
 
       broadcastRoomState(
         roomCode
