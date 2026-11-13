@@ -116,7 +116,92 @@ function createQuestionPool() {
   return questions;
 }
 
-function drawNextQuestion(room) {
+const LEVEL2_DIFFICULTY_QUESTIONS = {
+  easy: [1, 3, 4, 5, 8, 9, 10],
+  medium: [2, 6, 7, 11, 12, 13, 19],
+  hard: [14, 15, 16, 17, 18]
+};
+
+const DIFFICULTY_ORDER = ["easy", "medium", "hard"];
+
+function shuffleQuestions(questions) {
+  const result = questions.slice();
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+function initializeQuestionSelection(room) {
+  if (Number(room.currentLevel) === 2) {
+    room.difficultyPools = {
+      easy: shuffleQuestions(LEVEL2_DIFFICULTY_QUESTIONS.easy),
+      medium: shuffleQuestions(LEVEL2_DIFFICULTY_QUESTIONS.medium),
+      hard: shuffleQuestions(LEVEL2_DIFFICULTY_QUESTIONS.hard)
+    };
+    room.difficultySequence = Math.random() < 0.5
+      ? ["easy", "medium", "medium", "hard", "hard"]
+      : ["easy", "easy", "medium", "medium", "hard"];
+    room.difficultyProgressIndex = 0;
+    room.activeDifficulty = "easy";
+    room.questionPool = [];
+    return drawNextQuestion(room);
+  }
+
+  room.questionPool = createQuestionPool();
+  return room.questionPool.shift();
+}
+
+function drawLevel2Question(room, advanceCategory = false) {
+  if (!room.difficultyPools || !room.difficultySequence) {
+    return initializeQuestionSelection(room);
+  }
+
+  if (advanceCategory) {
+    room.difficultyProgressIndex = Math.min(
+      (room.difficultyProgressIndex || 0) + 1,
+      room.difficultySequence.length - 1
+    );
+  }
+
+  const scheduledDifficulty =
+    room.difficultySequence[room.difficultyProgressIndex || 0] || "hard";
+  const activeIndex = DIFFICULTY_ORDER.indexOf(room.activeDifficulty || "easy");
+  const scheduledIndex = DIFFICULTY_ORDER.indexOf(scheduledDifficulty);
+  const firstAllowedIndex = Math.max(activeIndex, scheduledIndex);
+  const previousQuestion = Number(room.currentQuestion);
+
+  for (let i = firstAllowedIndex; i < DIFFICULTY_ORDER.length; i++) {
+    const difficulty = DIFFICULTY_ORDER[i];
+    const pool = room.difficultyPools[difficulty] || [];
+    const nextIndex = pool.findIndex(question => Number(question) !== previousQuestion);
+
+    if (nextIndex >= 0) {
+      if (nextIndex > 0) {
+        [pool[0], pool[nextIndex]] = [pool[nextIndex], pool[0]];
+      }
+      room.activeDifficulty = difficulty;
+      return pool.shift();
+    }
+  }
+
+  // Si se agotan todos los acertijos difíciles, se repone esa categoría
+  // evitando repetir inmediatamente el acertijo anterior.
+  room.difficultyPools.hard = shuffleQuestions(
+    LEVEL2_DIFFICULTY_QUESTIONS.hard.filter(
+      question => Number(question) !== previousQuestion
+    )
+  );
+  room.activeDifficulty = "hard";
+  return room.difficultyPools.hard.shift();
+}
+
+function drawNextQuestion(room, advanceCategory = false) {
+  if (Number(room.currentLevel) === 2) {
+    return drawLevel2Question(room, advanceCategory);
+  }
+
   if (!Array.isArray(room.questionPool)) room.questionPool = [];
   if (room.questionPool.length === 0) room.questionPool = createQuestionPool();
 
@@ -297,8 +382,7 @@ function startNextLevelIfReady(roomCode) {
   room.currentLevel += 1;
   room.status = "playing";
   room.currentPuzzle = 1;
-  room.questionPool = createQuestionPool();
-  room.currentQuestion = room.questionPool.shift();
+  room.currentQuestion = initializeQuestionSelection(room);
   room.currentQuestionResolved = false;
   room.questionStartedAt = Date.now();
   room.puzzlesSolved = 0;
@@ -370,11 +454,8 @@ function startNextLevelForRoom(
   room.currentPuzzle =
     1;
 
-  room.questionPool =
-    createQuestionPool();
-
   room.currentQuestion =
-    room.questionPool.shift();
+    initializeQuestionSelection(room);
 
   room.currentQuestionResolved =
     false;
@@ -1436,11 +1517,8 @@ io.on("connection", (socket) => {
       room.currentPuzzle =
         1;
       
-      room.questionPool =
-        createQuestionPool();
-      
       room.currentQuestion =
-        room.questionPool.shift();
+        initializeQuestionSelection(room);
 
       room.currentQuestionResolved =
         false;
@@ -1716,7 +1794,7 @@ room.players.forEach(
         1;
       
       room.currentQuestion =
-        drawNextQuestion(room);
+        drawNextQuestion(room, true);
 
       room.failCount =
         0;
